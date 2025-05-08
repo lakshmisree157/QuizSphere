@@ -1,0 +1,19 @@
+# React frontend
+client/node_modules
+client/build
+client/.env*
+
+# Express backend
+server/node_modules
+server/.env*
+
+# Python ML service
+ml_service/__pycache__/
+ml_service/env/
+ml_service/.env*
+
+# General
+.DS_Store
+*.log
+*.pyc
+.env
