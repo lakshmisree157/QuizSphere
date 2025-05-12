@@ -36,3 +36,26 @@
     transform: rotate(360deg);
   }
 }
+
+.pdf-upload {
+  margin: 20px;
+  padding: 20px;
+}
+
+.pdf-upload input {
+  margin-bottom: 10px;
+}
+
+.pdf-upload button {
+  padding: 8px 16px;
+  background-color: #1976d2;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.pdf-upload button:disabled {
+  background-color: #cccccc;
+  cursor: not-allowed;
+}
