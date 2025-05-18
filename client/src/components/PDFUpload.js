@@ -1,130 +1,180 @@
 import React, { useState } from 'react';
-import { 
-  Box, 
-  Button, 
-  CircularProgress, 
-  Alert, 
-  Paper,
-  Typography,
-  LinearProgress
-} from '@mui/material';
-import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { 
+  Container, Typography, Box, Button, 
+  LinearProgress, Alert, Paper, TextField 
+} from '@mui/material';
 
 const PDFUpload = () => {
+  const navigate = useNavigate();
   const [file, setFile] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [testName, setTestName] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState(null);
   const [progress, setProgress] = useState(0);
-  const handleUpload = async () => {
-    if (!file) return;
 
+  const handleFileChange = (event) => {
+    const selectedFile = event.target.files[0];
+    if (selectedFile && selectedFile.type === 'application/pdf') {
+      setFile(selectedFile);
+      setError(null);
+    } else {
+      setError('Please select a valid PDF file');
+    }
+  };
+
+  const handleUpload = async () => {
+    if (!file) {
+      setError('Please select a PDF file first');
+      return;
+    }
+
+    if (!testName.trim()) {
+      setError('Please enter a test name');
+      return;
+    }
+
+    setUploading(true);
+    setError(null);
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append('pdf', file);
+    formData.append('testName', testName.trim());
 
     try {
-      setLoading(true);
-      setError('');
-      setProgress(0);
+      const token = localStorage.getItem('token');
+      if (!token) {
+        navigate('/login');
+        return;
+      }
 
-      const mlResponse = await axios.post(
-        `${process.env.REACT_APP_ML_SERVICE_URL}/api/pdf/upload`,
+      const response = await axios.post(
+        `${process.env.REACT_APP_API_URL}/api/questions/upload`,
         formData,
         {
-          headers: { 'Content-Type': 'multipart/form-data' },
-          timeout: 120000,
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'multipart/form-data'
+          },
           onUploadProgress: (progressEvent) => {
-            const percentCompleted = Math.round((progressEvent.loaded * 50) / progressEvent.total);
+            const percentCompleted = Math.round(
+              (progressEvent.loaded * 100) / progressEvent.total
+            );
             setProgress(percentCompleted);
           }
         }
       );
 
-      if (!mlResponse.data.questions || !Array.isArray(mlResponse.data.questions)) {
-        throw new Error('Invalid response from ML service');
+      if (response.data.success) {
+        navigate('/dashboard');
+      } else {
+        throw new Error(response.data.error || 'Upload failed');
       }
-
-      const backendResponse = await axios.post(
-        `${process.env.REACT_APP_API_URL}/api/questions`,
-        { questions: mlResponse.data.questions },
-        { headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } }
-      );
-
-      setSuccess(`Successfully generated ${mlResponse.data.totalQuestions} questions!`);
-      setProgress(100);
     } catch (error) {
+      console.error('Upload error:', error);
       setError(error.response?.data?.error || 'Failed to upload PDF');
     } finally {
-      setLoading(false);
+      setUploading(false);
+      setProgress(0);
     }
   };
 
   return (
-    <Paper elevation={3} sx={{ p: 3 }}>
-      <Typography variant="h6" gutterBottom>
-        Upload PDF
-      </Typography>
-      
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
-        </Alert>
-      )}
-      
-      {success && (
-        <Alert severity="success" sx={{ mb: 2 }}>
-          {success}
-        </Alert>
-      )}
+    <Container maxWidth="md">
+      <Box sx={{ mt: 4 }}>
+        <Typography variant="h4" gutterBottom>
+          Upload PDF
+        </Typography>
 
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        <input
-          accept=".pdf"
-          type="file"
-          onChange={(e) => {
-            setFile(e.target.files[0]);
-            setError('');
-            setSuccess('');
-          }}
-          style={{ display: 'none' }}
-          id="pdf-upload"
-        />
-        <label htmlFor="pdf-upload">
-          <Button
-            variant="outlined"
-            component="span"
-            startIcon={<CloudUploadIcon />}
+        <Paper elevation={3} sx={{ p: 4, mt: 3 }}>
+          <TextField
             fullWidth
+            label="Test Name"
+            variant="outlined"
+            value={testName}
+            onChange={(e) => setTestName(e.target.value)}
+            disabled={uploading}
+            sx={{ mb: 3 }}
+          />
+
+          <Paper 
+            elevation={0}
+            sx={{ 
+              p: 3,
+              mb: 3,
+              border: '2px dashed #ccc',
+              borderRadius: 2,
+              backgroundColor: '#fafafa'
+            }}
           >
-            Select PDF
-          </Button>
-        </label>
-        
-        {file && (
-          <Typography variant="body2" color="textSecondary">
-            Selected file: {file.name}
-          </Typography>
-        )}
+            <input
+              accept="application/pdf"
+              style={{ display: 'none' }}
+              id="pdf-upload"
+              type="file"
+              onChange={handleFileChange}
+              disabled={uploading}
+            />
+            <label htmlFor="pdf-upload">
+              <Button
+                variant="contained"
+                component="span"
+                fullWidth
+                disabled={uploading}
+                sx={{ py: 2 }}
+              >
+                Select PDF File
+              </Button>
+            </label>
+          </Paper>
 
-        <Button
-          variant="contained"
-          onClick={handleUpload}
-          disabled={!file || loading}
-        >
-          {loading ? <CircularProgress size={24} /> : 'Upload'}
-        </Button>
+          {error && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {error}
+            </Alert>
+          )}
+
+          {file && (
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="body1">
+                Selected file: {file.name}
+              </Typography>
+            </Box>
+          )}
+
+          {uploading && (
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="body2" gutterBottom>
+                Upload progress: {progress}%
+              </Typography>
+              <LinearProgress 
+                variant="determinate" 
+                value={progress} 
+                sx={{ mt: 1 }}
+              />
+            </Box>
+          )}
+
+          <Box sx={{ mt: 3, display: 'flex', gap: 2 }}>
+            <Button
+              variant="contained"
+              onClick={handleUpload}
+              disabled={!file || !testName.trim() || uploading}
+              fullWidth
+            >
+              {uploading ? 'Uploading...' : 'Upload PDF'}
+            </Button>
+            <Button
+              variant="outlined"
+              onClick={() => navigate('/dashboard')}
+              disabled={uploading}
+            >
+              Cancel
+            </Button>
+          </Box>
+        </Paper>
       </Box>
-
-      {loading && (
-        <Box sx={{ width: '100%', mt: 2 }}>
-          <LinearProgress variant="determinate" value={progress} />
-          <Typography variant="body2" color="textSecondary" align="center">
-            {progress}% Uploaded
-          </Typography>
-        </Box>
-      )}
-    </Paper>
+    </Container>
   );
 };
 

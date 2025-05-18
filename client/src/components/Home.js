@@ -1,63 +1,95 @@
 import React from 'react';
-import { Box, Button, Container, Typography, Paper } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
-import { styled } from '@mui/material/styles';
-
-const StyledPaper = styled(Paper)(({ theme }) => ({
-  padding: theme.spacing(6),
-  display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'center',
-  background: 'rgba(255, 255, 255, 0.9)',
-  borderRadius: '15px'
-}));
+import {
+  Container,
+  Typography,
+  Button,
+  Box,
+  Paper,
+  Grid
+} from '@mui/material';
 
 const Home = () => {
   const navigate = useNavigate();
 
   return (
-    <Box
-      sx={{
+    <Container maxWidth="lg">
+      <Box sx={{ 
         minHeight: '100vh',
-        background: 'linear-gradient(45deg, #2196F3 30%, #21CBF3 90%)',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
         py: 8
-      }}
-    >
-      <Container maxWidth="sm">
-        <StyledPaper elevation={3}>
-          <Typography
-            component="h1"
-            variant="h3"
-            gutterBottom
-            color="primary"
-            sx={{ mb: 4 }}
-          >
-            Adaptive Quiz
-          </Typography>
-          <Typography variant="h6" color="textSecondary" align="center" sx={{ mb: 4 }}>
-            Generate and take quizzes based on your learning materials
-          </Typography>
-          <Box sx={{ display: 'flex', gap: 2, mt: 2, justifyContent: 'center' }}>
-            <Button
-              variant="contained"
-              color="primary"
-              size="large"
-              onClick={() => navigate('/login')}
+      }}>
+        <Grid container spacing={4} alignItems="center">
+          <Grid item xs={12} md={6}>
+            <Typography 
+              variant="h2" 
+              component="h1" 
+              gutterBottom 
+              sx={{ 
+                fontWeight: 700,
+                color: 'primary.main'
+              }}
             >
-              Login
-            </Button>
-            <Button
-              variant="outlined"
-              color="primary"
-              size="large"
-              onClick={() => navigate('/register')}
+              Adaptive Quiz Platform
+            </Typography>
+            <Typography variant="h5" color="text.secondary" paragraph>
+              Transform your PDF documents into interactive quizzes with AI-powered question generation
+            </Typography>
+            <Box sx={{ mt: 4, display: 'flex', gap: 2 }}>
+              <Button
+                variant="contained"
+                size="large"
+                onClick={() => navigate('/register')}
+                sx={{ px: 4 }}
+              >
+                Get Started
+              </Button>
+              <Button
+                variant="outlined"
+                size="large"
+                onClick={() => navigate('/login')}
+                sx={{ px: 4 }}
+              >
+                Sign In
+              </Button>
+            </Box>
+          </Grid>
+          <Grid item xs={12} md={6}>
+            <Paper 
+              elevation={3}
+              sx={{
+                p: 4,
+                bgcolor: 'background.paper',
+                borderRadius: 2
+              }}
             >
-              Register
-            </Button>
-          </Box>
-        </StyledPaper>
-      </Container>
-    </Box>
+              <Typography variant="h6" gutterBottom color="primary">
+                Key Features
+              </Typography>
+              <Box component="ul" sx={{ mt: 2, pl: 2 }}>
+                <Typography component="li" sx={{ mb: 1 }}>
+                  AI-powered question generation from PDF documents
+                </Typography>
+                <Typography component="li" sx={{ mb: 1 }}>
+                  Interactive quiz interface with instant feedback
+                </Typography>
+                <Typography component="li" sx={{ mb: 1 }}>
+                  Detailed performance analytics and progress tracking
+                </Typography>
+                <Typography component="li" sx={{ mb: 1 }}>
+                  Multiple attempts allowed for better learning
+                </Typography>
+                <Typography component="li">
+                  Secure and user-friendly platform
+                </Typography>
+              </Box>
+            </Paper>
+          </Grid>
+        </Grid>
+      </Box>
+    </Container>
   );
 };
 

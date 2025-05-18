@@ -4,7 +4,10 @@ const multer = require('multer');
 const axios = require('axios');
 const { v4: uuidv4 } = require('uuid');
 const Question = require('../models/question');
+const Test = require('../models/test'); // Import the Test model
 
+const auth = require('../middleware/auth');
+router.use(auth); // Add this line at the top
 // Configure multer for PDF upload
 const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
@@ -110,6 +113,14 @@ router.post('/upload', upload.single('pdf'), async (req, res) => {
       return res.status(400).json({ error: 'No PDF file uploaded' });
     }
 
+    // Check ML service health first
+    const isMLServiceAvailable = await checkMLService(3);
+    if (!isMLServiceAvailable) {
+      return res.status(503).json({ error: 'ML service is not available' });
+    }
+
+    const testName = req.body.testName || 'Untitled Test';
+
     const mlResponse = await axios.post(
       `${process.env.ML_SERVICE_URL}/api/questions/generate`,
       { content: req.file.buffer.toString('base64') },
@@ -118,34 +129,44 @@ router.post('/upload', upload.single('pdf'), async (req, res) => {
 
     if (!mlResponse.data.questions || !Array.isArray(mlResponse.data.questions)) {
       throw new Error('Invalid response from ML service');
-    }
-
-    const formattedQuestions = mlResponse.data.questions.map(q => ({
-      content: q.content,
-      options: q.options,
-      correctAnswer: q.correctAnswer,
-      bloomLevel: q.bloomLevel,
-      type: q.type,
-      mainTopic: q.mainTopic,
-      subtopic: q.subtopic,
-      userId: req.user._id,
+    }    const formattedQuestions = mlResponse.data.questions.map(q => ({
+      content: q.content || q.question,
+      options: Array.isArray(q.options) ? q.options : [],
+      correctAnswer: q.correctAnswer || q.answer,
+      bloomLevel: q.bloomLevel || q.bloom_level || 1,
+      type: q.type || 'MCQ',
+      mainTopic: q.mainTopic || q.topic || 'General',
+      subtopic: q.subtopic || 'General',
       uniqueId: uuidv4()
     }));
 
-    const savedQuestions = await Question.insertMany(formattedQuestions);
+    let test = await Test.findOne({ userId: req.user._id, testName });
+
+    if (!test) {
+      test = new Test({
+        userId: req.user._id,
+        testName,
+        questions: formattedQuestions
+      });
+    } else {
+      test.questions.push(...formattedQuestions);
+    }
+
+    await test.save();
 
     const io = req.app.get('io');
     if (io) {
-      io.to(req.user._id.toString()).emit('questions-generated', savedQuestions);
+      io.to(req.user._id.toString()).emit('questions-generated', test);
     }
 
     res.status(201).json({
       message: 'Questions generated and saved successfully',
-      questions: savedQuestions
+      test
     });
   } catch (error) {
     console.error('Error generating questions:', error);
-    res.status(500).json({ error: 'Failed to generate questions' });
+    const errorMessage = error.response?.data?.error || error.message || 'Failed to generate questions';
+    res.status(500).json({ error: errorMessage });
   }
 });
 

@@ -1,22 +1,23 @@
 const jwt = require('jsonwebtoken');
-// Fix the path to use lowercase 'user.js'
-const User = require('../models/user');
 
 const auth = async (req, res, next) => {
   try {
-    const token = req.header('Authorization').replace('Bearer ', '');
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await User.findById(decoded.userId);
-
-    if (!user) {
-      throw new Error();
+    const token = req.header('Authorization')?.replace('Bearer ', '');
+    
+    if (!token) {
+      return res.status(401).json({ error: 'Authentication required' });
     }
 
-    req.user = user;
-    req.token = token;
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (!decoded || !decoded.userId) {
+      throw new Error('Invalid token');
+    }
+
+    req.user = { _id: decoded.userId };
     next();
-  } catch (e) {
-    res.status(401).json({ error: 'Please authenticate.' });
+  } catch (error) {
+    console.error('Auth middleware error:', error);
+    res.status(401).json({ error: 'Please login again' });
   }
 };
 

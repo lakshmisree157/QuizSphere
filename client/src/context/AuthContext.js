@@ -1,35 +1,71 @@
-import React, { createContext, useState, useContext, useEffect, useCallback, useMemo } from 'react';
+import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
 const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState(null);
+
+  // Log user state changes for debugging
+  React.useEffect(() => {
+    console.log('AuthContext user state changed:', user);
+  }, [user]);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+
+  const login = async (email, password) => {
+    try {
+      console.log('Attempting login with:', process.env.REACT_APP_API_URL);
+      const response = await axios.post(
+        `${process.env.REACT_APP_API_URL}/api/auth/login`,
+        { email, password },
+        {
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      if (!response.data || !response.data.token) {
+        throw new Error('Invalid response from server');
+      }
+
+      const { token, user: userData } = response.data;
+      
+      // Store complete user data
+      const userToStore = {
+        id: userData._id,
+        name: userData.name,
+        email: userData.email
+      };
+
+      console.log('Storing user to localStorage:', userToStore);
+      
+      localStorage.setItem('token', token);
+      localStorage.setItem('user', JSON.stringify(userToStore));
+      
+      setUser(userToStore);
+      setIsAuthenticated(true);
+      navigate('/dashboard');
+      return { success: true };
+    } catch (error) {
+      console.error('Login error:', error);
+      return { 
+        success: false, 
+        error: error.response?.data?.error || 'Invalid credentials' 
+      };
+    }
+  };
 
   const logout = useCallback(() => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
-    setIsAuthenticated(false);
     setUser(null);
-    navigate('/login', { replace: true });
+    setIsAuthenticated(false);
+    navigate('/login');
   }, [navigate]);
-
-  const login = useCallback(async (token, userData) => {
-    try {
-      localStorage.setItem('token', token);
-      localStorage.setItem('user', JSON.stringify(userData));
-      setUser(userData);
-      setIsAuthenticated(true);
-      navigate('/dashboard', { replace: true });
-    } catch (error) {
-      console.error('Login error:', error);
-      logout();
-    }
-  }, [navigate, logout]);
 
   useEffect(() => {
     const initAuth = async () => {
@@ -42,16 +78,27 @@ export const AuthProvider = ({ children }) => {
           return;
         }
 
-        // Verify token with backend
         try {
-          const verifyResponse = await axios.get(
+          const response = await axios.get(
             `${process.env.REACT_APP_API_URL}/api/auth/verify`,
-            { headers: { Authorization: `Bearer ${token}` } }
+            { 
+              headers: { 
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+              }
+            }
           );
 
-          // Use the verified user data from response
-          setUser(verifyResponse.data);
-          setIsAuthenticated(true);
+          console.log('Verify response data:', response.data);
+
+          if (response.data && response.data.userId) {
+            const storedUser = JSON.parse(userData);
+            console.log('User data from localStorage:', storedUser);
+            setUser(storedUser);
+            setIsAuthenticated(true);
+          } else {
+            throw new Error('Invalid response from verify endpoint');
+          }
         } catch (error) {
           console.error('Token verification failed:', error);
           logout();
@@ -67,20 +114,16 @@ export const AuthProvider = ({ children }) => {
     initAuth();
   }, [logout]);
 
-  const contextValue = useMemo(() => ({
-    isAuthenticated,
+  const value = {
     user,
+    isAuthenticated,
+    loading,
     login,
-    logout,
-    loading
-  }), [isAuthenticated, user, login, logout, loading]);
-
-  if (loading) {
-    return <div>Loading...</div>;
-  }
+    logout
+  };
 
   return (
-    <AuthContext.Provider value={contextValue}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );

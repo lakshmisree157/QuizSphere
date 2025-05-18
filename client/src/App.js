@@ -1,42 +1,20 @@
 import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
+import { ThemeProvider } from '@mui/material/styles';
+import theme from './theme';
+import Layout from './components/Layout';
 import Home from './components/Home';
 import Login from './components/Login';
 import Register from './components/Register';
 import Dashboard from './components/Dashboard';
+import PDFUpload from './components/PDFUpload';
 import Quiz from './components/Quiz';
-import Layout from './components/Layout';
-import { ThemeProvider } from '@mui/material/styles';
-import { createTheme } from '@mui/material';
+import QuizResult from './components/QuizResult';
+import ProtectedRoute from './components/ProtectedRoute';
 import { useAuth } from './context/AuthContext';
-import { Box, CircularProgress } from '@mui/material';
-
-const theme = createTheme({
-  palette: {
-    primary: {
-      main: '#1976d2',
-    },
-    secondary: {
-      main: '#dc004e',
-    },
-  }
-});
 
 function App() {
-  const { isAuthenticated, loading } = useAuth();
-
-  if (loading) {
-    return (
-      <Box sx={{ 
-        display: 'flex', 
-        justifyContent: 'center', 
-        alignItems: 'center', 
-        height: '100vh' 
-      }}>
-        <CircularProgress />
-      </Box>
-    );
-  }
+  const { isAuthenticated } = useAuth();
 
   return (
     <ThemeProvider theme={theme}>
@@ -55,11 +33,19 @@ function App() {
         <Route element={<Layout />}>
           <Route 
             path="/dashboard" 
-            element={isAuthenticated ? <Dashboard /> : <Navigate to="/login" replace />} 
+            element={<ProtectedRoute><Dashboard /></ProtectedRoute>} 
           />
           <Route 
-            path="/quiz" 
-            element={isAuthenticated ? <Quiz /> : <Navigate to="/login" replace />} 
+            path="/upload" 
+            element={<ProtectedRoute><PDFUpload /></ProtectedRoute>} 
+          />
+          <Route 
+            path="/quiz/:testId" 
+            element={<ProtectedRoute><Quiz /></ProtectedRoute>} 
+          />
+          <Route 
+            path="/quiz-result/:quizId" 
+            element={<ProtectedRoute><QuizResult /></ProtectedRoute>} 
           />
         </Route>
       </Routes>

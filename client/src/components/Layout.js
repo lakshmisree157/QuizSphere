@@ -20,23 +20,14 @@ const Layout = () => {
   return (
     <>
       <AppBar position="static">
-        <Toolbar>
-          <Typography variant="h6" sx={{ flexGrow: 1 }}>
-            Welcome, {user?.username}
-          </Typography>
-          <Button 
+        <Toolbar>          <Typography variant="h6" sx={{ flexGrow: 1 }}>
+            Welcome, {user?.name || 'User'}
+          </Typography><Button 
             color="inherit" 
             onClick={() => navigate('/dashboard')}
             disabled={loggingOut}
           >
             Dashboard
-          </Button>
-          <Button 
-            color="inherit" 
-            onClick={() => navigate('/quiz')}
-            disabled={loggingOut}
-          >
-            Quiz
           </Button>
           <Button 
             color="inherit" 
