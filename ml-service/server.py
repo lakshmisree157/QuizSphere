@@ -400,6 +400,20 @@ def chunk_content(content, max_length=3000):
 
     return chunks
 
+def convert_numpy_types(data):
+    """Recursively convert numpy types to native Python types."""
+    if isinstance(data, np.integer):
+        return int(data)
+    elif isinstance(data, np.floating):
+        return float(data)
+    elif isinstance(data, np.ndarray):
+        return data.tolist()
+    elif isinstance(data, dict):
+        return {key: convert_numpy_types(value) for key, value in data.items()}
+    elif isinstance(data, list):
+        return [convert_numpy_types(item) for item in data]
+    return data
+
 @app.post("/api/questions/generate")
 async def generate_questions(data: PDFContent):
     logger.info("Starting question generation from PDF content")
@@ -450,11 +464,14 @@ async def generate_questions(data: PDFContent):
         if not all_questions:
             raise HTTPException(status_code=500, detail="No questions generated")
 
-        return {
+        response_data = {
             "questions": all_questions,
             "totalQuestions": len(all_questions),
             "topicBreakdown": topic_breakdown
         }
+
+        # Convert numpy types to native Python types
+        return convert_numpy_types(response_data)
 
     except Exception as e:
         logger.error(f"Error generating questions: {str(e)}")
@@ -548,17 +565,20 @@ async def upload_pdf(file: UploadFile):
                 detail="Failed to generate any valid questions"
             )
 
-        return {
+        response_data = {
             "questions": all_questions,
             "totalQuestions": len(all_questions)
         }
+
+        # Convert numpy types to native Python types
+        return convert_numpy_types(response_data)
+
     except Exception as e:
         logger.error(f"Error processing PDF: {str(e)}")
         raise HTTPException(
             status_code=500, 
             detail=f"Error processing PDF: {str(e)}"
         )
-
 
 @app.get("/health")
 async def health_check():
