@@ -17,12 +17,17 @@ const Layout = () => {
     }
   };
 
+  console.log('Layout user:', user);
+  const displayName = user?.username || user?.name || 'User';
+
   return (
     <>
       <AppBar position="static">
-        <Toolbar>          <Typography variant="h6" sx={{ flexGrow: 1 }}>
-            Welcome, {user?.name || 'User'}
-          </Typography><Button 
+        <Toolbar>
+          <Typography variant="h6" sx={{ flexGrow: 1 }}>
+            Welcome, {displayName}
+          </Typography>
+          <Button 
             color="inherit" 
             onClick={() => navigate('/dashboard')}
             disabled={loggingOut}

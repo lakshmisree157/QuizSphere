@@ -7,22 +7,22 @@ const User = require('../models/user');
 // Registration route
 router.post('/register', async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    const { username, name, email, password } = req.body;
 
     // Validate input
-    if (!name || !email || !password) {
+    if (!username || !name || !email || !password) {
       return res.status(400).json({ error: 'All fields are required' });
     }
 
-    // Check if user exists
-    const existingUser = await User.findOne({ email });
+    // Check if username or email exists
+    const existingUser = await User.findOne({ $or: [{ username }, { email }] });
     if (existingUser) {
-      return res.status(400).json({ error: 'User already exists' });
+      return res.status(400).json({ error: 'Username or email already exists' });
     }
 
     // Create new user
     const user = new User({
-      name,
+      username,
       email,
       password // Password will be hashed by the pre-save middleware
     });
@@ -41,7 +41,7 @@ router.post('/register', async (req, res) => {
       token,
       user: {
         id: user._id,
-        name: user.name,
+        username: user.username,
         email: user.email
       }
     });
@@ -64,6 +64,7 @@ router.post('/login', async (req, res) => {
     if (!user) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
+    console.log('Login user object:', user);
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
@@ -80,7 +81,7 @@ router.post('/login', async (req, res) => {
       token,
       user: {
         _id: user._id,
-        name: user.name,
+        username: user.username,
         email: user.email
       }
     });
@@ -106,7 +107,7 @@ router.get('/verify', async (req, res) => {
       return res.status(401).json({ error: 'User not found' });
     }
 
-    res.json({ userId: user._id, name: user.name, email: user.email });
+    res.json({ userId: user._id, username: user.username, name: user.name, email: user.email });
   } catch (error) {
     res.status(401).json({ error: 'Invalid token' });
   }

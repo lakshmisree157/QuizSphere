@@ -13,6 +13,7 @@ import { useNavigate, Link as RouterLink } from 'react-router-dom';
 import axios from 'axios';
 
 const Register = () => {
+  const [username, setUsername] = useState('');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -23,7 +24,7 @@ const Register = () => {
     e.preventDefault();
     setError('');
 
-    if (!name || !email || !password) {
+    if (!username || !name || !email || !password) {
       setError('Please fill in all fields');
       return;
     }
@@ -31,7 +32,7 @@ const Register = () => {
     try {
       const response = await axios.post(
         `${process.env.REACT_APP_API_URL}/api/auth/register`,
-        { name, email, password }
+        { username, name, email, password }
       );
 
       if (response.data.token) {
@@ -59,6 +60,14 @@ const Register = () => {
           )}
 
           <Box component="form" onSubmit={handleSubmit} sx={{ mt: 3 }}>
+            <TextField
+              margin="normal"
+              required
+              fullWidth
+              label="Username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+            />
             <TextField
               margin="normal"
               required

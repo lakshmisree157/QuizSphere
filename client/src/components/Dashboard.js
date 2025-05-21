@@ -6,7 +6,7 @@ import {
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { useAuth } from '../context/AuthContext';
+// import { useAuth } from '../context/AuthContext';
 
 const Dashboard = () => {
   const [tests, setTests] = useState([]);
@@ -14,7 +14,6 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const navigate = useNavigate();
-  const { user } = useAuth();
 
   useEffect(() => {
     const fetchData = async () => {
@@ -67,9 +66,7 @@ const Dashboard = () => {
         <Grid container spacing={3}>
           <Grid item xs={12}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-              <Typography variant="h4">
-                Welcome, {user?.name || 'User'}
-              </Typography>
+              
               <Button 
                 variant="contained" 
                 color="primary"
