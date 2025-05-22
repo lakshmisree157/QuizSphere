@@ -3,30 +3,40 @@ import { createTheme } from '@mui/material/styles';
 const theme = createTheme({
   palette: {
     primary: {
-      main: '#2C3E50',
-      light: '#34495E',
-      dark: '#1A252F',
-      contrastText: '#ECF0F1'
+      main: '#3f51b5', // pleasant blue
+      light: '#6573c3',
+      dark: '#2c387e',
+      contrastText: '#ffffff'
     },
     secondary: {
-      main: '#E74C3C',
-      light: '#F75C4C',
-      dark: '#C0392B',
-      contrastText: '#FFFFFF'
+      main: '#4caf50', // pleasant green
+      light: '#80e27e',
+      dark: '#087f23',
+      contrastText: '#ffffff'
     },
     background: {
-      default: '#F5F6FA',
-      paper: '#FFFFFF'
+      default: '#f0f4f8', // soft light gray-blue
+      paper: '#ffffff'
     },
     success: {
-      main: '#2ECC71',
-      light: '#55D98D',
-      dark: '#27AE60'
+      main: '#4caf50',
+      light: '#80e27e',
+      dark: '#087f23'
     },
     error: {
-      main: '#E74C3C',
-      light: '#FF6B6B',
-      dark: '#C0392B'
+      main: '#f44336',
+      light: '#ff7961',
+      dark: '#ba000d'
+    },
+    info: {
+      main: '#2196f3',
+      light: '#6ec6ff',
+      dark: '#0069c0'
+    },
+    warning: {
+      main: '#ff9800',
+      light: '#ffc947',
+      dark: '#c66900'
     }
   },
   shape: {
@@ -53,11 +63,15 @@ const theme = createTheme({
           textTransform: 'none',
           fontWeight: 500,
           borderRadius: 8,
-          padding: '8px 24px'
+          padding: '8px 24px',
+          transition: 'all 0.3s ease'
         },
         containedPrimary: {
+          backgroundColor: '#3f51b5',
+          color: '#ffffff',
           '&:hover': {
-            boxShadow: '0 4px 12px rgba(44, 62, 80, 0.2)'
+            backgroundColor: '#2c387e',
+            boxShadow: '0 6px 20px rgba(63, 81, 181, 0.4)'
           }
         }
       }
@@ -65,7 +79,9 @@ const theme = createTheme({
     MuiPaper: {
       styleOverrides: {
         root: {
-          boxShadow: '0 2px 12px rgba(0, 0, 0, 0.08)'
+          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.12)',
+          borderRadius: 12,
+          transition: 'transform 0.3s ease'
         }
       }
     },
@@ -73,7 +89,7 @@ const theme = createTheme({
       styleOverrides: {
         head: {
           fontWeight: 600,
-          backgroundColor: '#F8FAFC'
+          backgroundColor: '#e3eaf2'
         }
       }
     }

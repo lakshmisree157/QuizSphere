@@ -1,4 +1,3 @@
-// client/src/components/QuizResult.js
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -8,6 +7,8 @@ import {
   Table, TableBody, TableCell, TableHead, TableRow 
 } from '@mui/material';
 import { quizStyles } from '../styles/components';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import CancelIcon from '@mui/icons-material/Cancel';
 
 const QuizResult = () => {
   const { quizId } = useParams();
@@ -30,7 +31,6 @@ const QuizResult = () => {
           return;
         }
 
-        console.log('Fetching quiz result for ID:', quizId);
         const response = await axios.get(
           `${process.env.REACT_APP_API_URL}/api/quiz-attempts/${quizId}`,
           { 
@@ -40,8 +40,8 @@ const QuizResult = () => {
           }
         );
         
-        console.log('Response data:', response.data);
-        
+        console.log('API response data:', response.data);
+
         if (!response.data?.success || !response.data?.attempt) {
           throw new Error('Invalid response format');
         }
@@ -49,10 +49,8 @@ const QuizResult = () => {
         setResult(response.data.attempt);
         setError(null);
       } catch (error) {
-        console.error('Error details:', error.response || error);
+        console.error('Fetch error:', error);
         setError(error.response?.data?.error || 'Failed to fetch result');
-        // Do not navigate away immediately, allow user to see error
-        // setTimeout(() => navigate('/dashboard'), 3000);
       } finally {
         setLoading(false);
       }
@@ -122,6 +120,24 @@ const QuizResult = () => {
     );
   }
 
+  // Helper to extract option letter from userAnswer string
+  const extractOptionLetter = (answer) => {
+    if (!answer) return '';
+    const match = answer.match(/^[A-Z]/i);
+    return match ? match[0].toUpperCase() : '';
+  };
+
+  // Determine correctness by comparing option letters
+  const isAnswerCorrect = (userAnswer, correctAnswer) => {
+    return extractOptionLetter(userAnswer) === correctAnswer.toUpperCase();
+  };
+
+  // Format score for display
+  const formatScore = (score) => {
+    if (score === undefined || score === null) return '0%';
+    return score.toFixed(2) + '%';
+  };
+
   return (
     <Container maxWidth="lg">
       <Paper elevation={3} sx={{ p: 4, mt: 4, borderRadius: 2 }}>
@@ -131,10 +147,10 @@ const QuizResult = () => {
         
         <Box sx={quizStyles.scoreSection}>
           <Typography variant="h3" color="primary" gutterBottom>
-            {result.score}%
+            {Math.round((result.answers.filter(a => isAnswerCorrect(a.userAnswer, a.correctAnswer)).length / result.answers.length) * 100)}%
           </Typography>
           <Typography variant="h6" gutterBottom>
-            {result.answers.filter(a => a.isCorrect).length} out of {result.answers.length} correct
+            {result.answers.filter(a => isAnswerCorrect(a.userAnswer, a.correctAnswer)).length} out of {result.answers.length} correct
           </Typography>
           <Typography variant="subtitle1" color="text.secondary">
             Time Taken: {Math.floor(result.timeSpent / 60)}m {result.timeSpent % 60}s
@@ -155,23 +171,30 @@ const QuizResult = () => {
               </TableRow>
             </TableHead>
             <TableBody>
-              {result.answers.map((answer, index) => (
+              {result.answers.map((answer, index) => {
+                const correct = isAnswerCorrect(answer.userAnswer, answer.correctAnswer);
+                return (
                   <TableRow 
                     key={index}
-                    sx={answer.isCorrect === true ? quizStyles.correctAnswer : quizStyles.wrongAnswer}
+                    sx={correct ? quizStyles.correctAnswer : quizStyles.wrongAnswer}
                   >
                     <TableCell>{answer.question}</TableCell>
                     <TableCell>{answer.userAnswer || 'No answer'}</TableCell>
                     <TableCell>{answer.correctAnswer}</TableCell>
                     <TableCell align="center">
-                      {answer.isCorrect === true ? (
-                        <Typography color="success.dark">✓ Correct</Typography>
+                      {correct ? (
+                        <Typography color="success.dark" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <CheckCircleIcon sx={{ mr: 1 }} /> Correct
+                        </Typography>
                       ) : (
-                        <Typography color="error.dark">✗ Incorrect</Typography>
+                        <Typography color="error.dark" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <CancelIcon sx={{ mr: 1 }} /> Incorrect
+                        </Typography>
                       )}
                     </TableCell>
                   </TableRow>
-              ))}
+                );
+              })}
             </TableBody>
           </Table>
         </Box>
@@ -186,7 +209,13 @@ const QuizResult = () => {
           <Button 
             variant="contained"
             color="primary"
-            onClick={() => navigate(`/quiz/${result.testId}`)}
+            onClick={() => {
+              if (result.testId && result.testId._id) {
+                navigate(`/quiz/${result.testId._id}`);
+              } else {
+                console.error('Invalid testId for navigation:', result.testId);
+              }
+            }}
           >
             Retake Quiz
           </Button>

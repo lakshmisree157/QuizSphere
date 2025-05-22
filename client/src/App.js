@@ -44,6 +44,10 @@ function App() {
             element={<ProtectedRoute><Quiz /></ProtectedRoute>} 
           />
           <Route 
+            path="/quiz/attempt/:attemptId" 
+            element={<ProtectedRoute><Quiz /></ProtectedRoute>} 
+          />
+          <Route 
             path="/quiz-result/:quizId" 
             element={<ProtectedRoute><QuizResult /></ProtectedRoute>} 
           />

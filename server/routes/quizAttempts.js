@@ -1,4 +1,3 @@
-// server/routes/quizAttempts.js
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
@@ -7,6 +6,18 @@ const auth = require('../middleware/auth');
 
 router.use(auth);
 
+// Helper to extract option letter from userAnswer string
+function extractOptionLetter(answer) {
+  if (!answer) return '';
+  const match = answer.match(/^[A-Z]/i);
+  return match ? match[0].toUpperCase() : '';
+}
+
+// Helper to determine correctness by comparing option letters
+function isAnswerCorrect(userAnswer, correctAnswer) {
+  return extractOptionLetter(userAnswer) === correctAnswer.toUpperCase();
+}
+
 // Get quiz attempt by ID
 router.get('/:quizId', async (req, res) => {
   console.log(`GET /api/quiz-attempts/${req.params.quizId} by user ${req.user._id}`);
@@ -14,7 +25,7 @@ router.get('/:quizId', async (req, res) => {
     const attempt = await QuizAttempt.findOne({
       _id: req.params.quizId,
       userId: req.user._id
-    }).populate('testId', 'testName');
+    }).populate('testId', '_id testName');
 
     if (!attempt) {
       console.warn(`Quiz attempt not found: ${req.params.quizId} for user ${req.user._id}`);
@@ -24,7 +35,7 @@ router.get('/:quizId', async (req, res) => {
       });
     }
 
-    console.log(`Quiz attempt found: ${attempt._id} for user ${req.user._id}`);
+    console.log(`Quiz attempt found: ${attempt._id} for user ${req.user._id}, score: ${attempt.score}`);
 
     res.json({
       success: true,
@@ -52,7 +63,7 @@ router.get('/', async (req, res) => {
   console.log(`GET /api/quiz-attempts/ all attempts by user ${req.user._id}`);
   try {
     const attempts = await QuizAttempt.find({ userId: req.user._id })
-      .populate('testId', 'testName')
+      .populate('testId', '_id testName')
       .sort('-createdAt')
       .lean();
 
@@ -75,20 +86,51 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
   console.log(`POST /api/quiz-attempts/ by user ${req.user._id}`);
   try {
-    const { testId, answers, timeSpent, score } = req.body;
-    
+    const { testId, answers, timeSpent } = req.body;
+
+    if (!Array.isArray(answers) || answers.length === 0) {
+      console.warn('No answers provided in request body');
+      return res.status(400).json({
+        success: false,
+        error: 'Answers array is required and cannot be empty'
+      });
+    }
+
+    console.log('Received answers:', answers);
+
+    // Calculate isCorrect for each answer
+    const processedAnswers = answers.map(answer => {
+      const correct = isAnswerCorrect(answer.userAnswer, answer.correctAnswer);
+      console.log(`Answer: ${answer.userAnswer}, Correct Answer: ${answer.correctAnswer}, isCorrect: ${correct}`);
+      return {
+        ...answer,
+        isCorrect: correct
+      };
+    });
+
+    const correctAnswersCount = processedAnswers.filter(a => a.isCorrect).length;
+    const totalQuestions = processedAnswers.length;
+    const calculatedScore = Math.round((correctAnswersCount / totalQuestions) * 100);
+
+    console.log('Score calculation:', {
+      correctAnswersCount,
+      totalQuestions,
+      calculatedScore
+    });
+    console.log(`Calculated score: ${score} for user ${req.user._id}`);
+
     const attempt = new QuizAttempt({
       userId: req.user._id,
       testId,
-      answers,
+      answers: processedAnswers,
       timeSpent,
-      score,
-      totalQuestions: answers.length
+      score:correctAnswersCount,
+      totalQuestions
     });
 
     await attempt.save();
 
-    console.log(`Quiz attempt saved: ${attempt._id} for user ${req.user._id}`);
+    console.log(`Quiz attempt saved: ${attempt._id}  with score: ${attempt.score}`);
 
     res.status(201).json({
       success: true,

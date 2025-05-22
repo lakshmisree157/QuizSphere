@@ -6,7 +6,12 @@ import {
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-// import { useAuth } from '../context/AuthContext';
+import { dashboardStyles } from '../styles/components';
+import UploadFileIcon from '@mui/icons-material/UploadFile';
+import QuizIcon from '@mui/icons-material/Quiz';
+import ReplayIcon from '@mui/icons-material/Replay';
+import DeleteIcon from '@mui/icons-material/Delete';
+import VisibilityIcon from '@mui/icons-material/Visibility';
 
 const Dashboard = () => {
   const [tests, setTests] = useState([]);
@@ -70,6 +75,8 @@ const Dashboard = () => {
               <Button 
                 variant="contained" 
                 color="primary"
+                startIcon={<UploadFileIcon />}
+                sx={dashboardStyles.uploadButton}
                 onClick={() => navigate('/upload')}
               >
                 Upload New PDF
@@ -92,7 +99,10 @@ const Dashboard = () => {
                   </TableHead>
                   <TableBody>
                     {tests.map((test) => (
-                      <TableRow key={test._id}>
+                      <TableRow 
+                        key={test._id} 
+                        sx={dashboardStyles.tableRowHover}
+                      >
                         <TableCell>{test.testName}</TableCell>
                         <TableCell>{test.questions?.length || 0}</TableCell>
                         <TableCell>
@@ -102,8 +112,10 @@ const Dashboard = () => {
                           <Button
                             variant="contained"
                             color="primary"
+                            startIcon={<QuizIcon />}
                             onClick={() => navigate(`/quiz/${test._id}`)}
                             disabled={!test.questions?.length}
+                            sx={{ mr: 1 }}
                           >
                             Take Quiz
                           </Button>
@@ -137,7 +149,10 @@ const Dashboard = () => {
                   </TableHead>
                   <TableBody>
                     {quizAttempts.map((attempt) => (
-                      <TableRow key={attempt._id}>
+                      <TableRow 
+                        key={attempt._id} 
+                        sx={dashboardStyles.tableRowHover}
+                      >
                         <TableCell>{attempt.testId?.testName || 'Unknown Test'}</TableCell>
                         <TableCell>{attempt.score}%</TableCell>
                         <TableCell>
@@ -146,6 +161,7 @@ const Dashboard = () => {
                         <TableCell>
                           <Button
                             variant="outlined"
+                            startIcon={<VisibilityIcon />}
                             onClick={() => navigate(`/quiz-result/${attempt._id}`)}
                             sx={{ mr: 1 }}
                           >
@@ -153,6 +169,7 @@ const Dashboard = () => {
                           </Button>
                           <Button
                             variant="contained"
+                            startIcon={<ReplayIcon />}
                             onClick={() => navigate(`/quiz/${attempt.testId?._id || ''}`)}
                             sx={{ mr: 1 }}
                           >
@@ -161,6 +178,7 @@ const Dashboard = () => {
                           <Button
                             variant="outlined"
                             color="error"
+                            startIcon={<DeleteIcon />}
                             onClick={async () => {
                               if (window.confirm('Are you sure you want to delete this quiz attempt?')) {
                                 try {
