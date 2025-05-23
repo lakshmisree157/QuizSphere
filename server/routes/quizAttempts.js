@@ -18,6 +18,32 @@ function isAnswerCorrect(userAnswer, correctAnswer) {
   return extractOptionLetter(userAnswer) === correctAnswer.toUpperCase();
 }
 
+// In server/routes/quizAttempts.js
+router.get('/:quizId/questions', async (req, res) => {
+  try {
+    // 1. Find the specific quiz attempt
+    const attempt = await QuizAttempt.findOne({
+      _id: req.params.quizId,
+      userId: req.user._id
+    }).populate('testId', 'testName');
+
+    // 2. Return the questions with their options
+    res.json({
+      success: true,
+      questions: attempt.answers.map(a => ({
+        uniqueId: a.questionId,
+        content: a.question,
+        correctAnswer: a.correctAnswer,
+        options: a.options  // This is crucial for retry
+      })),
+      testName: attempt.testId.testName
+    });
+  } catch (error) {
+    // Error handling...
+  }
+});
+
+
 // Get quiz attempt by ID
 router.get('/:quizId', async (req, res) => {
   console.log(`GET /api/quiz-attempts/${req.params.quizId} by user ${req.user._id}`);
@@ -104,7 +130,8 @@ router.post('/', async (req, res) => {
       console.log(`Answer: ${answer.userAnswer}, Correct Answer: ${answer.correctAnswer}, isCorrect: ${correct}`);
       return {
         ...answer,
-        isCorrect: correct
+        isCorrect: correct,
+        options: answer.options || []
       };
     });
 
@@ -117,14 +144,14 @@ router.post('/', async (req, res) => {
       totalQuestions,
       calculatedScore
     });
-    console.log(`Calculated score: ${score} for user ${req.user._id}`);
+    console.log(`Calculated score: ${calculatedScore} for user ${req.user._id}`);
 
     const attempt = new QuizAttempt({
       userId: req.user._id,
       testId,
       answers: processedAnswers,
       timeSpent,
-      score:correctAnswersCount,
+      score: calculatedScore,
       totalQuestions
     });
 

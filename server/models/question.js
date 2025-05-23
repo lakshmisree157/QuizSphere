@@ -7,11 +7,11 @@ const questionSchema = new mongoose.Schema({
   },
   options: [{
     type: String,
-    required: true
+    required: false
   }],
   correctAnswer: {
     type: String,
-    required: true
+    required: false
   },
   bloomLevel: {
     type: Number,
@@ -29,7 +29,7 @@ const questionSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ['MCQ', 'Descriptive'],
+    enum: ['MCQ', 'Descriptive', 'YesNo', 'TrueFalse', 'FillInTheBlanks'],
     required: true
   },
   userId: {

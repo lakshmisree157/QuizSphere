@@ -14,6 +14,7 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
 import spacy
 from sentence_transformers import SentenceTransformer
 from collections import defaultdict
@@ -31,6 +32,10 @@ from dotenv import load_dotenv
 import os
 import base64
 from concurrent.futures import ThreadPoolExecutor
+
+# Import new modules
+from bloom_predictor import bloom_predictor, predict_bloom_level_for_paragraph
+from question_selector import select_questions
 
 # Load environment variables at the start
 load_dotenv()
@@ -271,6 +276,16 @@ def basic_bt_mapping(text):
     bloom_level = determine_bloom_level(feature_vector)
     return bloom_level
 
+# Replace basic_bt_mapping with RF model based prediction
+def rf_model_bt_mapping(text):
+    try:
+        bloom_level = predict_bloom_level_for_paragraph(text)
+        return int(bloom_level)
+    except Exception as e:
+        logger.error(f"RF model bloom level prediction failed: {str(e)}")
+        # fallback to heuristic
+        return basic_bt_mapping(text)
+
 def extract_linguistic_features(text):
     """Extract linguistic features for Bloom's taxonomy classification."""
     feature_vector = extract_feature_vector(text)
@@ -289,7 +304,6 @@ def extract_linguistic_features(text):
 def generate_questions_groq(content, bloom_level):
     logger.info(f"Generating questions for bloom level {bloom_level}")
     
-    # Limit content length to avoid payload size issues
     max_content_length = 4000
     if len(content) > max_content_length:
         content = content[:max_content_length]
@@ -305,10 +319,10 @@ def generate_questions_groq(content, bloom_level):
         "messages": [{
             "role": "user",
             "content": f"""Generate questions based on this content and Bloom's level {bloom_level}.
-            
+
 Content: {content}
 
-Instructions: Generate 3 multiple choice questions focusing on Bloom's level {bloom_level}.
+Instructions: Generate a mix of question types including Multiple Choice Questions (MCQ), Descriptive, Yes/No, True/False, and Fill in the Blanks focusing on Bloom's level {bloom_level}.
 Format the response as a JSON array ONLY with no additional text.
 Example:
 [
@@ -317,59 +331,15 @@ Example:
     "question": "What is X?",
     "options": ["A) First", "B) Second", "C) Third", "D) Fourth"],
     "answer": "A"
-  }}
-]"""
-        }],
-        "temperature": 0.7,
-        "max_tokens": 1000
-    }
-
-    try:
-        logger.info("Sending request to GROQ API...")
-        response = requests.post(GROQ_API_URL, headers=headers, json=prompt, timeout=30)
-        logger.info(f"GROQ API Status Code: {response.status_code}")
-        logger.info(f"GROQ API Response: {response.text[:500]}...")  # Log first 500 chars
-        
-        response.raise_for_status()
-        result = response.json()
-        
-        questions_text = result['choices'][0]['message']['content'].strip()
-        logger.info(f"Raw questions text: {questions_text[:500]}...")  # Log first 500 chars
-        
-        try:
-            # First try to parse the text directly
-            questions = json.loads(questions_text)
-            logger.info("Successfully parsed response as JSON")
-        except json.JSONDecodeError:
-            # If that fails, try to extract JSON array
-            logger.info("Failed to parse response directly, trying to extract JSON array...")
-            json_start = questions_text.find('[')
-            json_end = questions_text.rfind(']') + 1
-            
-            if json_start == -1 or json_end == 0:
-                logger.error(f"No JSON array found in response: {questions_text}")
-                raise ValueError("No valid JSON found in response")
-            
-            questions_json = questions_text[json_start:json_end]
-            logger.info(f"Extracted JSON: {questions_json}")
-            questions = json.loads(questions_json)
-            logger.info("Successfully parsed extracted JSON")
-
-        # Validate response format
-        if not isinstance(questions, list):
-            raise ValueError("Response is not a list of questions")
-
-        # Print questions for debugging
-        print("\n=== Generated Questions ===")
-        print(json.dumps(questions, indent=2))
-        print("=====================\n")
-        logger.info(f"Generated {len(questions)} questions")
-
-        return questions
-
-    except Exception as e:
-        logger.error(f"Error in generate_questions_groq: {str(e)}")
-        raise
+  }},
+  {{
+    "type": "Descriptive",
+    "question": "Explain the concept of X.",
+    "answer": ""
+  }},
+  {{
+    "type": "TrueFalse",
+    "question": "X is true.",
 
 # Function to process chunks in parallel
 def process_chunk(chunk, bloom_level):
@@ -401,7 +371,9 @@ def chunk_content(content, max_length=3000):
     return chunks
 
 def convert_numpy_types(data):
-    """Recursively convert numpy types to native Python types."""
+    """
+    Recursively convert numpy types to native Python types.
+    """
     if isinstance(data, np.integer):
         return int(data)
     elif isinstance(data, np.floating):
@@ -438,28 +410,33 @@ async def generate_questions(data: PDFContent):
                 if not processed_content:
                     continue
 
-                bloom_level = basic_bt_mapping(processed_content)
+                bloom_level = rf_model_bt_mapping(processed_content)
                 chunks = chunk_content(processed_content)
 
                 for chunk in chunks:
                     try:
                         questions = generate_questions_groq(chunk, bloom_level)
                         for q in questions:
-                            if q["type"] == "MCQ":
-                                topic_questions.append({
-                                    "content": q["question"],
-                                    "options": q["options"],
-                                    "correctAnswer": q["answer"],
-                                    "bloomLevel": bloom_level,
-                                    "type": "MCQ",
-                                    "mainTopic": main_topic,
-                                    "subtopic": subtopic
-                                })
+                            formatted_question = {
+                                "content": q.get("question", ""),
+                                "bloomLevel": bloom_level,
+                                "type": q.get("type", "MCQ"),
+                                "mainTopic": main_topic,
+                                "subtopic": subtopic
+                            }
+                            if formatted_question["type"] == "MCQ":
+                                formatted_question["options"] = q.get("options", [])
+                                formatted_question["correctAnswer"] = q.get("answer", "")
+                            elif formatted_question["type"] in ["YesNo", "TrueFalse"]:
+                                formatted_question["correctAnswer"] = q.get("answer", "")
+                            # Descriptive and Fill in the Blanks may not have options or correctAnswer
+                            topic_questions.append(formatted_question)
                     except Exception as e:
                         logger.error(f"Error processing chunk: {str(e)}")
 
-            all_questions.extend(topic_questions)
-            topic_breakdown[main_topic] = len(topic_questions)
+            selected_questions = select_questions(topic_questions)
+            all_questions.extend(selected_questions)
+            topic_breakdown[main_topic] = len(selected_questions)
 
         if not all_questions:
             raise HTTPException(status_code=500, detail="No questions generated")
@@ -470,7 +447,6 @@ async def generate_questions(data: PDFContent):
             "topicBreakdown": topic_breakdown
         }
 
-        # Convert numpy types to native Python types
         return convert_numpy_types(response_data)
 
     except Exception as e:

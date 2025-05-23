@@ -12,6 +12,7 @@ import Quiz from './components/Quiz';
 import QuizResult from './components/QuizResult';
 import ProtectedRoute from './components/ProtectedRoute';
 import { useAuth } from './context/AuthContext';
+import QuizRetry from './components/QuizRetry';
 
 function App() {
   const { isAuthenticated } = useAuth();
@@ -46,6 +47,10 @@ function App() {
           <Route 
             path="/quiz/attempt/:attemptId" 
             element={<ProtectedRoute><Quiz /></ProtectedRoute>} 
+          />
+          <Route 
+            path="/quiz-retry/:attemptId"
+            element={<ProtectedRoute><QuizRetry /></ProtectedRoute>}
           />
           <Route 
             path="/quiz-result/:quizId" 

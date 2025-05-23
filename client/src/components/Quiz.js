@@ -4,7 +4,7 @@ import axios from 'axios';
 import { 
   Container, Typography, Box, Button, Radio, 
   RadioGroup, FormControlLabel, Paper, CircularProgress, Alert,
-  LinearProgress 
+  LinearProgress, TextField
 } from '@mui/material';
 import { quizStyles } from '../styles/components';
 import NavigateBeforeIcon from '@mui/icons-material/NavigateBefore';
@@ -47,8 +47,9 @@ const Quiz = () => {
           const attemptQuestions = response.data.attempt.answers.map(a => ({
             uniqueId: a.questionId,
             content: a.question,
-            options: [], // options not stored in attempt, so empty
-            correctAnswer: a.correctAnswer
+            options: a.options || [],
+            correctAnswer: a.correctAnswer,
+            type: a.type || 'MCQ'
           }));
 
           setQuestions(attemptQuestions);
@@ -93,6 +94,13 @@ const Quiz = () => {
     fetchQuestions();
   }, [testId, attemptId, navigate]);
 
+  const handleAnswerChange = (questionId, value) => {
+    setSelectedAnswers(prev => ({
+      ...prev,
+      [questionId]: value
+    }));
+  };
+
   const handleSubmit = async () => {
     try {
       const token = localStorage.getItem('token');
@@ -104,7 +112,9 @@ const Quiz = () => {
         question: q.content,
         userAnswer: selectedAnswers[q.uniqueId] || '',
         correctAnswer: q.correctAnswer,
-        isCorrect: selectedAnswers[q.uniqueId] === q.correctAnswer
+        isCorrect: selectedAnswers[q.uniqueId] === q.correctAnswer,
+        options: q.options || [],
+        type: q.type || 'MCQ'
       }));
 
       const correctCount = answers.filter(a => a.isCorrect).length;
@@ -142,6 +152,60 @@ const Quiz = () => {
 
   const currentQ = questions[currentQuestion];
 
+  const renderQuestionInput = () => {
+    switch (currentQ.type) {
+      case 'MCQ':
+        return (
+          <RadioGroup
+            value={selectedAnswers[currentQ.uniqueId] || ''}
+            onChange={(e) => handleAnswerChange(currentQ.uniqueId, e.target.value)}
+          >
+            {currentQ.options.map((option, index) => (
+              <FormControlLabel
+                key={index}
+                value={option}
+                control={<Radio />}
+                label={option}
+              />
+            ))}
+          </RadioGroup>
+        );
+      case 'YesNo':
+      case 'TrueFalse':
+        return (
+          <RadioGroup
+            value={selectedAnswers[currentQ.uniqueId] || ''}
+            onChange={(e) => handleAnswerChange(currentQ.uniqueId, e.target.value)}
+          >
+            <FormControlLabel value="Yes" control={<Radio />} label="Yes" />
+            <FormControlLabel value="No" control={<Radio />} label="No" />
+          </RadioGroup>
+        );
+      case 'Descriptive':
+        return (
+          <TextField
+            multiline
+            rows={4}
+            fullWidth
+            value={selectedAnswers[currentQ.uniqueId] || ''}
+            onChange={(e) => handleAnswerChange(currentQ.uniqueId, e.target.value)}
+            placeholder="Type your answer here"
+          />
+        );
+      case 'FillInTheBlanks':
+        return (
+          <TextField
+            fullWidth
+            value={selectedAnswers[currentQ.uniqueId] || ''}
+            onChange={(e) => handleAnswerChange(currentQ.uniqueId, e.target.value)}
+            placeholder="Fill in the blank"
+          />
+        );
+      default:
+        return <Typography>Unsupported question type: {currentQ.type}</Typography>;
+    }
+  };
+
   return (
     <Container>
       <Paper elevation={3} sx={{ p: 3, mt: 3, ...quizStyles.questionCard }}>
@@ -161,22 +225,7 @@ const Quiz = () => {
           {currentQ.content}
         </Typography>
 
-        <RadioGroup
-          value={selectedAnswers[currentQ.uniqueId] || ''}
-          onChange={(e) => setSelectedAnswers({
-            ...selectedAnswers,
-            [currentQ.uniqueId]: e.target.value
-          })}
-        >
-          {currentQ.options.map((option, index) => (
-            <FormControlLabel
-              key={index}
-              value={option}
-              control={<Radio />}
-              label={option}
-            />
-          ))}
-        </RadioGroup>
+        {renderQuestionInput()}
 
         <Box sx={{ mt: 3, display: 'flex', justifyContent: 'space-between' }}>
           <Button

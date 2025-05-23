@@ -170,7 +170,7 @@ const Dashboard = () => {
                           <Button
                             variant="contained"
                             startIcon={<ReplayIcon />}
-                            onClick={() => navigate(`/quiz/${attempt.testId?._id || ''}`)}
+                            onClick={() => navigate(`/quiz-retry/${attempt._id}`)}
                             sx={{ mr: 1 }}
                           >
                             Retake

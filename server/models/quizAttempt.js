@@ -17,7 +17,8 @@ const quizAttemptSchema = new mongoose.Schema({
     question: String,
     userAnswer: String,
     correctAnswer: String,
-    isCorrect: Boolean
+    isCorrect: Boolean,
+    options: [String]
   }],
   timeSpent: Number,
   totalQuestions: Number,
