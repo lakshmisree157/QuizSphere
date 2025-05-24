@@ -13,6 +13,7 @@ import QuizResult from './components/QuizResult';
 import ProtectedRoute from './components/ProtectedRoute';
 import { useAuth } from './context/AuthContext';
 import QuizRetry from './components/QuizRetry';
+import QuizStats from './components/QuizStats';
 
 function App() {
   const { isAuthenticated } = useAuth();
@@ -49,13 +50,15 @@ function App() {
             element={<ProtectedRoute><Quiz /></ProtectedRoute>} 
           />
           <Route 
-            path="/quiz-retry/:attemptId"
-            element={<ProtectedRoute><QuizRetry /></ProtectedRoute>}
-          />
-          <Route 
             path="/quiz-result/:quizId" 
             element={<ProtectedRoute><QuizResult /></ProtectedRoute>} 
           />
+          <Route path="/quiz-retry/:attemptId" element={<ProtectedRoute><QuizRetry /></ProtectedRoute>} />
+          <Route path="/quiz-stats/:testId" element={
+            <ProtectedRoute>
+              <QuizStats />
+            </ProtectedRoute>
+          } />
         </Route>
       </Routes>
     </ThemeProvider>

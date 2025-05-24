@@ -12,7 +12,8 @@ import {
   Box,
   CircularProgress,
   Alert,
-  Chip
+  Chip,
+  TextField
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import axios from 'axios';
@@ -85,6 +86,58 @@ const QuestionList = () => {
     }));
   };
 
+  const renderQuestionInput = (question) => {
+    switch (question.type) {
+      case 'MCQ':
+        return (
+          <FormControl component="fieldset">
+            <RadioGroup
+              value={selectedAnswers[question.uniqueId] || ''}
+              onChange={(e) => handleAnswerSelect(question.uniqueId, e.target.value)}
+            >
+              {question.options.map((option, optIndex) => (
+                <FormControlLabel
+                  key={optIndex}
+                  value={option}
+                  control={<Radio />}
+                  label={option}
+                />
+              ))}
+            </RadioGroup>
+          </FormControl>
+        );
+      
+      case 'YES_NO':
+        return (
+          <FormControl component="fieldset">
+            <RadioGroup
+              value={selectedAnswers[question.uniqueId] || ''}
+              onChange={(e) => handleAnswerSelect(question.uniqueId, e.target.value)}
+            >
+              <FormControlLabel value="Yes" control={<Radio />} label="Yes" />
+              <FormControlLabel value="No" control={<Radio />} label="No" />
+            </RadioGroup>
+          </FormControl>
+        );
+      
+      case 'DESCRIPTIVE':
+        return (
+          <TextField
+            fullWidth
+            multiline
+            rows={4}
+            variant="outlined"
+            placeholder="Enter your answer here..."
+            value={selectedAnswers[question.uniqueId] || ''}
+            onChange={(e) => handleAnswerSelect(question.uniqueId, e.target.value)}
+          />
+        );
+      
+      default:
+        return null;
+    }
+  };
+
   if (loading) {
     return <CircularProgress />;
   }
@@ -122,6 +175,12 @@ const QuestionList = () => {
                       <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                           <Typography>Question {index + 1}</Typography>
+                          <Chip
+                            label={question.type}
+                            size="small"
+                            color="secondary"
+                            variant="outlined"
+                          />
                           {question.subtopic && (
                             <Chip
                               label={question.subtopic}
@@ -136,21 +195,7 @@ const QuestionList = () => {
                         <Typography gutterBottom>
                           {question.content}
                         </Typography>
-                        <FormControl component="fieldset">
-                          <RadioGroup
-                            value={selectedAnswers[question.uniqueId] || ''}
-                            onChange={(e) => handleAnswerSelect(question.uniqueId, e.target.value)}
-                          >
-                            {question.options.map((option, optIndex) => (
-                              <FormControlLabel
-                                key={optIndex}
-                                value={option}
-                                control={<Radio />}
-                                label={option}
-                              />
-                            ))}
-                          </RadioGroup>
-                        </FormControl>
+                        {renderQuestionInput(question)}
                         <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
                           <Typography variant="caption" color="textSecondary">
                             Bloom's Level: {question.bloomLevel}

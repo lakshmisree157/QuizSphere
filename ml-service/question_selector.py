@@ -1,7 +1,7 @@
 import random
 from collections import defaultdict
 
-TOTAL_QUESTIONS = 10
+TOTAL_QUESTIONS = 5
 
 target_distribution = {
     1: 0.15,  # Remember

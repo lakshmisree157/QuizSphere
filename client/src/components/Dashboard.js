@@ -2,7 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { 
   Container, Typography, Button, Box, Paper,
   Table, TableBody, TableCell, TableHead, TableRow,
-  Grid, CircularProgress, Alert 
+  Grid, CircularProgress, Alert, Chip, Dialog,
+  DialogTitle, DialogContent, DialogContentText,
+  DialogActions, Card, CardContent, IconButton,
+  Tooltip
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -12,12 +15,18 @@ import QuizIcon from '@mui/icons-material/Quiz';
 import ReplayIcon from '@mui/icons-material/Replay';
 import DeleteIcon from '@mui/icons-material/Delete';
 import VisibilityIcon from '@mui/icons-material/Visibility';
+import BarChartIcon from '@mui/icons-material/BarChart';
+import InfoIcon from '@mui/icons-material/Info';
+import { Edit as EditIcon, PlayArrow as PlayArrowIcon } from '@mui/icons-material';
 
 const Dashboard = () => {
   const [tests, setTests] = useState([]);
   const [quizAttempts, setQuizAttempts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [selectedAttempt, setSelectedAttempt] = useState(null);
+  const [deleting, setDeleting] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -51,35 +60,198 @@ const Dashboard = () => {
     fetchData();
   }, [navigate]);
 
+  const handleDeleteAttempt = async () => {
+    if (!selectedAttempt) return;
+
+    try {
+      setDeleting(true);
+      const token = localStorage.getItem('token');
+      const response = await axios.delete(
+        `${process.env.REACT_APP_API_URL}/api/quiz-attempts/${selectedAttempt._id}`,
+        {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }
+      );
+
+      if (response.data.success) {
+        setQuizAttempts(prev => prev.filter(a => a._id !== selectedAttempt._id));
+      } else {
+        throw new Error('Failed to delete attempt');
+      }
+    } catch (error) {
+      setError(error.response?.data?.error || 'Failed to delete attempt');
+    } finally {
+      setDeleting(false);
+      setShowDeleteDialog(false);
+      setSelectedAttempt(null);
+    }
+  };
+
+  const getQuestionTypeStats = (questions) => {
+    const stats = {
+      MCQ: 0,
+      YES_NO: 0,
+      DESCRIPTIVE: 0
+    };
+
+    questions?.forEach(q => {
+      const type = q.type || 'MCQ';
+      stats[type]++;
+    });
+
+    return stats;
+  };
+
+  const getAttemptStats = (testId) => {
+    const testAttempts = quizAttempts.filter(a => a.testId._id === testId);
+    if (testAttempts.length === 0) return null;
+
+    const totalAttempts = testAttempts.length;
+    const avgScore = testAttempts.reduce((sum, a) => sum + a.score, 0) / totalAttempts;
+    const bestScore = Math.max(...testAttempts.map(a => a.score));
+    const latestAttempt = new Date(Math.max(...testAttempts.map(a => new Date(a.createdAt))));
+
+    return {
+      totalAttempts,
+      avgScore: Math.round(avgScore),
+      bestScore,
+      latestAttempt
+    };
+  };
+
+  const renderQuestionTypeChips = (questions) => {
+    const stats = getQuestionTypeStats(questions);
+    return (
+      <Box sx={{ display: 'flex', gap: 1 }}>
+        {Object.entries(stats).map(([type, count]) => (
+          count > 0 && (
+            <Chip
+              key={type}
+              label={`${type}: ${count}`}
+              size="small"
+              color="secondary"
+              variant="outlined"
+            />
+          )
+        ))}
+      </Box>
+    );
+  };
+
+  const renderTestCard = (test) => {
+    const stats = getQuestionTypeStats(test.questions);
+    const attemptStats = getAttemptStats(test._id);
+
+    return (
+      <Card key={test._id} sx={{ mb: 2 }}>
+        <CardContent>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
+            <Box>
+              <Typography variant="h6" gutterBottom>
+                {test.testName}
+              </Typography>
+              <Typography variant="body2" color="text.secondary" gutterBottom>
+                {test.description}
+              </Typography>
+              {renderQuestionTypeChips(test.questions)}
+            </Box>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Tooltip title="View Statistics">
+                <IconButton
+                  onClick={() => navigate(`/quiz-stats/${test._id}`)}
+                  color="primary"
+                >
+                  <BarChartIcon />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title="Edit Quiz">
+                <IconButton
+                  onClick={() => navigate(`/edit-quiz/${test._id}`)}
+                  color="primary"
+                >
+                  <EditIcon />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title="Start Quiz">
+                <IconButton
+                  onClick={() => navigate(`/quiz/${test._id}`)}
+                  color="success"
+                >
+                  <PlayArrowIcon />
+                </IconButton>
+              </Tooltip>
+            </Box>
+          </Box>
+
+          {attemptStats && (
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="subtitle2" gutterBottom>
+                Performance Overview
+              </Typography>
+              <Grid container spacing={2}>
+                <Grid item xs={12} sm={4}>
+                  <Typography variant="body2" color="text.secondary">
+                    Best Score
+                  </Typography>
+                  <Typography variant="h6">
+                    {attemptStats.bestScore}%
+                  </Typography>
+                </Grid>
+                <Grid item xs={12} sm={4}>
+                  <Typography variant="body2" color="text.secondary">
+                    Average Score
+                  </Typography>
+                  <Typography variant="h6">
+                    {attemptStats.avgScore}%
+                  </Typography>
+                </Grid>
+                <Grid item xs={12} sm={4}>
+                  <Typography variant="body2" color="text.secondary">
+                    Total Attempts
+                  </Typography>
+                  <Typography variant="h6">
+                    {attemptStats.totalAttempts}
+                  </Typography>
+                </Grid>
+              </Grid>
+            </Box>
+          )}
+        </CardContent>
+      </Card>
+    );
+  };
+
   if (loading) {
     return (
-      <Box display="flex" justifyContent="center" m={4}>
+      <Box display="flex" justifyContent="center" alignItems="center" minHeight="60vh">
         <CircularProgress />
       </Box>
     );
   }
 
+  if (error) {
+    return (
+      <Container maxWidth="lg" sx={{ mt: 4 }}>
+        <Alert severity="error">{error}</Alert>
+      </Container>
+    );
+  }
+
   return (
-    <Container>
-      <Box sx={{ mt: 4 }}>
-        {error && (
-          <Alert severity="error" sx={{ mb: 2 }}>
-            {error}
-          </Alert>
-        )}
-        
+    <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+      <Box sx={{ mb: 4 }}>
         <Grid container spacing={3}>
           <Grid item xs={12}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-              
-              <Button 
-                variant="contained" 
-                color="primary"
+              <Typography variant="h4">
+                Quiz Dashboard
+              </Typography>
+              <Button
+                variant="contained"
                 startIcon={<UploadFileIcon />}
-                sx={dashboardStyles.uploadButton}
                 onClick={() => navigate('/upload')}
               >
-                Upload New PDF
+                Upload PDF
               </Button>
             </Box>
           </Grid>
@@ -92,36 +264,72 @@ const Dashboard = () => {
                   <TableHead>
                     <TableRow>
                       <TableCell>Test Name</TableCell>
-                      <TableCell>Questions</TableCell>
-                      <TableCell>Created At</TableCell>
+                      <TableCell>Question Types</TableCell>
+                      <TableCell>Total Questions</TableCell>
+                      <TableCell>Performance</TableCell>
                       <TableCell>Actions</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {tests.map((test) => (
-                      <TableRow 
-                        key={test._id} 
-                        sx={dashboardStyles.tableRowHover}
-                      >
-                        <TableCell>{test.testName}</TableCell>
-                        <TableCell>{test.questions?.length || 0}</TableCell>
-                        <TableCell>
-                          {new Date(test.createdAt).toLocaleDateString()}
-                        </TableCell>
-                        <TableCell>
-                          <Button
-                            variant="contained"
-                            color="primary"
-                            startIcon={<QuizIcon />}
-                            onClick={() => navigate(`/quiz/${test._id}`)}
-                            disabled={!test.questions?.length}
-                            sx={{ mr: 1 }}
-                          >
-                            Take Quiz
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {tests.map((test) => {
+                      const stats = getAttemptStats(test._id);
+                      return (
+                        <TableRow 
+                          key={test._id} 
+                          sx={dashboardStyles.tableRowHover}
+                        >
+                          <TableCell>{test.testName}</TableCell>
+                          <TableCell>
+                            {renderQuestionTypeChips(test.questions)}
+                          </TableCell>
+                          <TableCell>{test.questions?.length || 0}</TableCell>
+                          <TableCell>
+                            {stats ? (
+                              <Box>
+                                <Typography variant="body2">
+                                  Attempts: {stats.totalAttempts}
+                                </Typography>
+                                <Typography variant="body2">
+                                  Avg Score: {stats.avgScore}%
+                                </Typography>
+                                <Typography variant="body2">
+                                  Best Score: {stats.bestScore}%
+                                </Typography>
+                              </Box>
+                            ) : (
+                              <Typography variant="body2" color="text.secondary">
+                                No attempts yet
+                              </Typography>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Box sx={{ display: 'flex', gap: 1 }}>
+                              <Tooltip title="Take Quiz">
+                                <Button
+                                  variant="contained"
+                                  color="primary"
+                                  startIcon={<QuizIcon />}
+                                  onClick={() => navigate(`/quiz/${test._id}`)}
+                                  disabled={!test.questions?.length}
+                                >
+                                  Take Quiz
+                                </Button>
+                              </Tooltip>
+                              {stats && (
+                                <Tooltip title="View Statistics">
+                                  <IconButton
+                                    color="primary"
+                                    onClick={() => navigate(`/quiz-stats/${test._id}`)}
+                                  >
+                                    <BarChartIcon />
+                                  </IconButton>
+                                </Tooltip>
+                              )}
+                            </Box>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </Paper>
@@ -143,71 +351,90 @@ const Dashboard = () => {
                     <TableRow>
                       <TableCell>Test Name</TableCell>
                       <TableCell>Score</TableCell>
+                      <TableCell>Question Types</TableCell>
+                      <TableCell>Time Spent</TableCell>
                       <TableCell>Date</TableCell>
                       <TableCell>Actions</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {quizAttempts.map((attempt) => (
-                      <TableRow 
-                        key={attempt._id} 
-                        sx={dashboardStyles.tableRowHover}
-                      >
-                        <TableCell>{attempt.testId?.testName || 'Unknown Test'}</TableCell>
-                        <TableCell>{attempt.score}%</TableCell>
-                        <TableCell>
-                          {new Date(attempt.createdAt).toLocaleDateString()}
-                        </TableCell>
-                        <TableCell>
-                          <Button
-                            variant="outlined"
-                            startIcon={<VisibilityIcon />}
-                            onClick={() => navigate(`/quiz-result/${attempt._id}`)}
-                            sx={{ mr: 1 }}
-                          >
-                            View Results
-                          </Button>
-                          <Button
-                            variant="contained"
-                            startIcon={<ReplayIcon />}
-                            onClick={() => navigate(`/quiz-retry/${attempt._id}`)}
-                            sx={{ mr: 1 }}
-                          >
-                            Retake
-                          </Button>
-                          <Button
-                            variant="outlined"
-                            color="error"
-                            startIcon={<DeleteIcon />}
-                            onClick={async () => {
-                              if (window.confirm('Are you sure you want to delete this quiz attempt?')) {
-                                try {
-                                  const token = localStorage.getItem('token');
-                                  console.log(`Deleting quiz attempt ${attempt._id} with token ${token}`);
-                                  const response = await fetch(`${process.env.REACT_APP_API_URL}/api/quiz-attempts/${attempt._id}`, {
-                                    method: 'DELETE',
-                                    headers: {
-                                      'Authorization': `Bearer ${token}`
+                    {quizAttempts.map((attempt) => {
+                      const typeStats = getQuestionTypeStats(attempt.answers);
+                      return (
+                        <TableRow 
+                          key={attempt._id} 
+                          sx={dashboardStyles.tableRowHover}
+                        >
+                          <TableCell>{attempt.testId?.testName || 'Unknown Test'}</TableCell>
+                          <TableCell>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <Typography
+                                variant="body1"
+                                sx={{
+                                  color: attempt.score >= 70 ? 'success.main' :
+                                         attempt.score >= 50 ? 'warning.main' : 'error.main'
+                                }}
+                              >
+                                {attempt.score}%
+                              </Typography>
+                            </Box>
+                          </TableCell>
+                          <TableCell>
+                            {renderQuestionTypeChips(attempt.answers)}
+                          </TableCell>
+                          <TableCell>
+                            {Math.floor(attempt.timeSpent / 60)}m {attempt.timeSpent % 60}s
+                          </TableCell>
+                          <TableCell>
+                            {new Date(attempt.createdAt).toLocaleDateString()}
+                          </TableCell>
+                          <TableCell>
+                            <Box sx={{ display: 'flex', gap: 1 }}>
+                              <Tooltip title="View Results">
+                                <Button
+                                  variant="outlined"
+                                  startIcon={<VisibilityIcon />}
+                                  onClick={() => {
+                                    console.log('Attempt data before navigation:', {
+                                      attemptId: attempt._id,
+                                      testId: attempt.testId?._id,
+                                      score: attempt.score
+                                    });
+                                    if (!attempt._id) {
+                                      console.error('No attempt ID available for navigation');
+                                      return;
                                     }
-                                  });
-                                  console.log('Delete response status:', response.status);
-                                  if (!response.ok) {
-                                    throw new Error('Delete request failed');
-                                  }
-                                  // Refresh quiz attempts after deletion
-                                  setQuizAttempts(prev => prev.filter(a => a._id !== attempt._id));
-                                } catch (error) {
-                                  console.error('Failed to delete quiz attempt:', error);
-                                  alert('Failed to delete quiz attempt');
-                                }
-                              }
-                            }}
-                          >
-                            Delete
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                                    navigate(`/quiz-result/${attempt._id}`);
+                                  }}
+                                >
+                                  View
+                                </Button>
+                              </Tooltip>
+                              <Tooltip title="Retake Quiz">
+                                <Button
+                                  variant="contained"
+                                  startIcon={<ReplayIcon />}
+                                  onClick={() => navigate(`/quiz/${attempt.testId?._id || ''}`)}
+                                >
+                                  Retake
+                                </Button>
+                              </Tooltip>
+                              <Tooltip title="Delete Attempt">
+                                <IconButton
+                                  color="error"
+                                  onClick={() => {
+                                    setSelectedAttempt(attempt);
+                                    setShowDeleteDialog(true);
+                                  }}
+                                >
+                                  <DeleteIcon />
+                                </IconButton>
+                              </Tooltip>
+                            </Box>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </Paper>
@@ -219,6 +446,34 @@ const Dashboard = () => {
           </Grid>
         </Grid>
       </Box>
+
+      <Dialog
+        open={showDeleteDialog}
+        onClose={() => !deleting && setShowDeleteDialog(false)}
+      >
+        <DialogTitle>Delete Quiz Attempt?</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Are you sure you want to delete this quiz attempt? This action cannot be undone.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button 
+            onClick={() => setShowDeleteDialog(false)}
+            disabled={deleting}
+          >
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleDeleteAttempt}
+            color="error"
+            variant="contained"
+            disabled={deleting}
+          >
+            {deleting ? 'Deleting...' : 'Delete'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Container>
   );
 };

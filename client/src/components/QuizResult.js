@@ -1,226 +1,474 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { 
-  Container, Typography, Box, Button, 
-  Paper, CircularProgress, Alert,
-  Table, TableBody, TableCell, TableHead, TableRow 
+import {
+  Container,
+  Typography,
+  Box,
+  Paper,
+  List,
+  ListItem,
+  ListItemText,
+  Divider,
+  Button,
+  CircularProgress,
+  Alert,
+  Grid,
+  Chip,
+  Card,
+  CardContent,
+  Tabs,
+  Tab,
+  IconButton,
+  Tooltip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions
 } from '@mui/material';
-import { quizStyles } from '../styles/components';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CancelIcon from '@mui/icons-material/Cancel';
+import ShareIcon from '@mui/icons-material/Share';
+import DeleteIcon from '@mui/icons-material/Delete';
+import { quizStyles } from '../styles/components';
 
 const QuizResult = () => {
   const { quizId } = useParams();
   const navigate = useNavigate();
-  const [result, setResult] = useState(null);
+  const [attempt, setAttempt] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [selectedTab, setSelectedTab] = useState('all');
+  const [showShareDialog, setShowShareDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
-    const fetchResult = async () => {
-      if (!quizId) {
-        setError('Quiz ID is missing');
-        return;
-      }
-
+    const fetchAttempt = async () => {
       try {
+        console.log('=== Quiz Result Fetch Started ===');
+        console.log('Quiz ID from URL:', quizId);
+        
+        // Validate quizId before making the request
+        if (!quizId) {
+          console.error('No quizId provided in URL');
+          setError('No quiz attempt ID provided');
+          setLoading(false);
+          navigate('/dashboard');
+          return;
+        }
+
+        if (quizId === 'undefined' || quizId === 'null') {
+          console.error('Invalid quizId format:', quizId);
+          setError('Invalid quiz attempt ID format');
+          setLoading(false);
+          navigate('/dashboard');
+          return;
+        }
+
+        // Validate quizId format (should be a MongoDB ObjectId)
+        if (!/^[0-9a-fA-F]{24}$/.test(quizId)) {
+          console.error('Invalid quizId format (not a valid MongoDB ObjectId):', quizId);
+          setError('Invalid quiz attempt ID format');
+          setLoading(false);
+          navigate('/dashboard');
+          return;
+        }
+
         const token = localStorage.getItem('token');
         if (!token) {
+          console.error('No authentication token found');
           navigate('/login');
           return;
         }
 
+        console.log('Making request to fetch quiz attempt with ID:', quizId);
         const response = await axios.get(
           `${process.env.REACT_APP_API_URL}/api/quiz-attempts/${quizId}`,
-          { 
-            headers: { 
-              'Authorization': `Bearer ${token}`
-            } 
+          {
+            headers: { 'Authorization': `Bearer ${token}` }
           }
         );
-        
-        console.log('API response data:', response.data);
 
-        if (!response.data?.success || !response.data?.attempt) {
-          throw new Error('Invalid response format');
+        console.log('Quiz attempt response:', response.data);
+
+        if (!response.data?.success) {
+          throw new Error(response.data?.error || 'Failed to fetch quiz attempt');
         }
 
-        setResult(response.data.attempt);
-        setError(null);
-      } catch (error) {
-        console.error('Fetch error:', error);
-        setError(error.response?.data?.error || 'Failed to fetch result');
+        if (!response.data?.attempt) {
+          console.error('No attempt data in response:', response.data);
+          throw new Error('No attempt data received');
+        }
+
+        console.log('Successfully fetched attempt:', {
+          attemptId: response.data.attempt._id,
+          testId: response.data.attempt.testId?._id,
+          score: response.data.attempt.score
+        });
+
+        setAttempt(response.data.attempt);
+      } catch (err) {
+        console.error('Error fetching quiz attempt:', err);
+        const errorMessage = err.response?.data?.error || err.message || 'Failed to load quiz results';
+        setError(errorMessage);
+        
+        // If it's an invalid ID error or not found, redirect to dashboard
+        if (err.response?.status === 400 || err.response?.status === 404) {
+          console.log('Invalid ID or not found error, redirecting to dashboard');
+          setTimeout(() => {
+            navigate('/dashboard');
+          }, 3000);
+        }
       } finally {
         setLoading(false);
       }
     };
 
-    fetchResult();
+    fetchAttempt();
   }, [quizId, navigate]);
+
+  const handleRetry = () => {
+    navigate(`/quiz-retry/${quizId}`);
+  };
+
+  const handleBackToDashboard = () => {
+    navigate('/dashboard');
+  };
+
+  const handleDeleteAllAttempts = async () => {
+    try {
+      setDeleting(true);
+      const token = localStorage.getItem('token');
+      const response = await axios.delete(
+        `${process.env.REACT_APP_API_URL}/api/quiz-attempts/test/${attempt.testId._id}`,
+        {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }
+      );
+
+      if (response.data.success) {
+        navigate('/dashboard');
+      } else {
+        throw new Error('Failed to delete attempts');
+      }
+    } catch (error) {
+      setError(error.response?.data?.error || 'Failed to delete attempts');
+    } finally {
+      setDeleting(false);
+      setShowDeleteDialog(false);
+    }
+  };
+
+  const calculateTypeStats = () => {
+    if (!attempt) return {};
+    
+    const stats = {
+      MCQ: { total: 0, correct: 0 },
+      YES_NO: { total: 0, correct: 0 },
+      DESCRIPTIVE: { total: 0, correct: 0 }
+    };
+
+    attempt.answers.forEach(answer => {
+      const type = answer.type || 'MCQ';
+      stats[type].total++;
+      if (answer.isCorrect) {
+        stats[type].correct++;
+      }
+    });
+
+    return stats;
+  };
+
+  const getFilteredAnswers = () => {
+    if (!attempt) return [];
+    if (selectedTab === 'all') return attempt.answers;
+    return attempt.answers.filter(answer => answer.type === selectedTab);
+  };
+
+  const renderPerformanceBreakdown = () => {
+    const stats = calculateTypeStats();
+    const totalCorrect = Object.values(stats).reduce((sum, stat) => sum + stat.correct, 0);
+    const totalQuestions = Object.values(stats).reduce((sum, stat) => sum + stat.total, 0);
+
+    return (
+      <Grid container spacing={2} sx={{ mb: 4 }}>
+        <Grid item xs={12}>
+          <Typography variant="h6" gutterBottom>
+            Performance Breakdown
+          </Typography>
+        </Grid>
+        {Object.entries(stats).map(([type, stat]) => (
+          stat.total > 0 && (
+            <Grid item xs={12} sm={4} key={type}>
+              <Card variant="outlined">
+                <CardContent>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                    <Chip label={type} size="small" color="secondary" />
+                    <Typography variant="h6">
+                      {Math.round((stat.correct / stat.total) * 100)}%
+                    </Typography>
+                  </Box>
+                  <Typography variant="body2" color="text.secondary">
+                    {stat.correct} correct out of {stat.total} questions
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+          )
+        ))}
+        <Grid item xs={12}>
+          <Card variant="outlined" sx={{ bgcolor: 'primary.light' }}>
+            <CardContent>
+              <Typography variant="h6" color="primary.contrastText">
+                Overall Score: {Math.round((totalCorrect / totalQuestions) * 100)}%
+              </Typography>
+              <Typography variant="body2" color="primary.contrastText">
+                {totalCorrect} correct out of {totalQuestions} questions
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+      </Grid>
+    );
+  };
+
+  const renderAnswerDisplay = (answer) => {
+    const isCorrect = answer.isCorrect;
+    const questionType = answer.type || 'MCQ'; // Default to MCQ if type not specified
+
+    return (
+      <Box sx={{ mt: 1, pl: 4 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+          <Chip
+            label={questionType}
+            size="small"
+            color="secondary"
+            variant="outlined"
+          />
+          {isCorrect ? (
+            <CheckCircleIcon color="success" />
+          ) : (
+            <CancelIcon color="error" />
+          )}
+        </Box>
+        
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+          Your answer: {answer.userAnswer || 'No answer provided'}
+        </Typography>
+        
+        {!isCorrect && (
+          <Typography variant="body2" color="success.main">
+            Correct answer: {answer.correctAnswer}
+          </Typography>
+        )}
+        
+        {questionType === 'DESCRIPTIVE' && (
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1, fontStyle: 'italic' }}>
+            Note: Descriptive answers are evaluated based on key concepts and understanding.
+          </Typography>
+        )}
+      </Box>
+    );
+  };
 
   if (loading) {
     return (
-      <Container maxWidth="lg">
-        <Box display="flex" justifyContent="center" m={4}>
-          <CircularProgress size={40} thickness={4} />
-        </Box>
-      </Container>
+      <Box display="flex" justifyContent="center" alignItems="center" minHeight="60vh">
+        <CircularProgress />
+      </Box>
     );
   }
 
   if (error) {
     return (
-      <Container maxWidth="lg">
-        <Box m={4}>
-          <Alert 
-            severity="error" 
-            sx={{ 
-              borderRadius: 2,
-              boxShadow: '0 2px 8px rgba(231, 76, 60, 0.15)'
-            }}
-          >
-            {error}
-          </Alert>
-          <Box sx={{ mt: 2, display: 'flex', gap: 2 }}>
-            <Button 
-              variant="contained"
-              onClick={() => navigate('/dashboard')}
-            >
+      <Container maxWidth="md" sx={{ mt: 4 }}>
+        <Alert 
+          severity="error"
+          action={
+            <Button color="inherit" size="small" onClick={() => navigate('/dashboard')}>
               Back to Dashboard
+            </Button>
+          }
+        >
+          {error}
+          {error.includes('Invalid quiz ID') && (
+            <Typography variant="body2" sx={{ mt: 1 }}>
+              Redirecting to dashboard...
+            </Typography>
+          )}
+        </Alert>
+      </Container>
+    );
+  }
+
+  if (!attempt) {
+    return (
+      <Container maxWidth="md" sx={{ mt: 4 }}>
+        <Alert severity="info">No quiz attempt found</Alert>
+      </Container>
+    );
+  }
+
+  const filteredAnswers = getFilteredAnswers();
+
+  return (
+    <Container maxWidth="md" sx={{ mt: 4, mb: 4 }}>
+      <Paper elevation={3} sx={{ p: 4, ...quizStyles.questionCard }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+          <Typography variant="h4" component="h1">
+            Quiz Results
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Tooltip title="Share Results">
+              <IconButton onClick={() => setShowShareDialog(true)}>
+                <ShareIcon />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="Delete All Attempts">
+              <IconButton 
+                color="error" 
+                onClick={() => setShowDeleteDialog(true)}
+                disabled={deleting}
+              >
+                <DeleteIcon />
+              </IconButton>
+            </Tooltip>
+          </Box>
+        </Box>
+
+        {renderPerformanceBreakdown()}
+
+        <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
+          <Tabs 
+            value={selectedTab} 
+            onChange={(e, newValue) => setSelectedTab(newValue)}
+            variant="scrollable"
+            scrollButtons="auto"
+          >
+            <Tab label="All Questions" value="all" />
+            <Tab label="Multiple Choice" value="MCQ" />
+            <Tab label="Yes/No" value="YES_NO" />
+            <Tab label="Descriptive" value="DESCRIPTIVE" />
+          </Tabs>
+        </Box>
+
+        <List>
+          {filteredAnswers.map((answer, index) => (
+            <React.Fragment key={answer.questionId}>
+              <ListItem
+                alignItems="flex-start"
+                sx={{
+                  bgcolor: answer.isCorrect ? 'success.light' : 'error.light',
+                  mb: 1,
+                  borderRadius: 1,
+                  flexDirection: 'column',
+                  alignItems: 'flex-start'
+                }}
+              >
+                <ListItemText
+                  primary={
+                    <Typography variant="subtitle1" sx={{ fontWeight: 'medium' }}>
+                      Question {index + 1}: {answer.question}
+                    </Typography>
+                  }
+                  secondary={renderAnswerDisplay(answer)}
+                />
+              </ListItem>
+              {index < filteredAnswers.length - 1 && <Divider />}
+            </React.Fragment>
+          ))}
+        </List>
+
+        <Box sx={{ mt: 4, display: 'flex', justifyContent: 'space-between' }}>
+          <Button
+            variant="outlined"
+            onClick={handleBackToDashboard}
+          >
+            Back to Dashboard
+          </Button>
+          <Box sx={{ display: 'flex', gap: 2 }}>
+            <Button
+              variant="outlined"
+              color="error"
+              onClick={() => setShowDeleteDialog(true)}
+              disabled={deleting}
+            >
+              Delete All Attempts
+            </Button>
+            <Button
+              variant="contained"
+              color="primary"
+              onClick={handleRetry}
+            >
+              Retry Quiz
             </Button>
           </Box>
         </Box>
-      </Container>
-    );
-  }
-
-  if (!result) {
-    return (
-      <Container maxWidth="lg">
-        <Box m={4}>
-          <Alert 
-            severity="info"
-            sx={{ 
-              borderRadius: 2,
-              boxShadow: '0 2px 8px rgba(52, 152, 219, 0.15)'
-            }}
-          >
-            No results found
-          </Alert>
-          <Button 
-            variant="contained" 
-            onClick={() => navigate('/dashboard')}
-            sx={{ mt: 2 }}
-          >
-            Back to Dashboard
-          </Button>
-        </Box>
-      </Container>
-    );
-  }
-
-  // Helper to extract option letter from userAnswer string
-  const extractOptionLetter = (answer) => {
-    if (!answer) return '';
-    const match = answer.match(/^[A-Z]/i);
-    return match ? match[0].toUpperCase() : '';
-  };
-
-  // Determine correctness by comparing option letters
-  const isAnswerCorrect = (userAnswer, correctAnswer) => {
-    return extractOptionLetter(userAnswer) === correctAnswer.toUpperCase();
-  };
-
-  // Format score for display
-  const formatScore = (score) => {
-    if (score === undefined || score === null) return '0%';
-    return score.toFixed(2) + '%';
-  };
-
-  return (
-    <Container maxWidth="lg">
-      <Paper elevation={3} sx={{ p: 4, mt: 4, borderRadius: 2 }}>
-        <Typography variant="h4" gutterBottom color="primary">
-          Quiz Results
-        </Typography>
-        
-        <Box sx={quizStyles.scoreSection}>
-          <Typography variant="h3" color="primary" gutterBottom>
-            {Math.round((result.answers.filter(a => isAnswerCorrect(a.userAnswer, a.correctAnswer)).length / result.answers.length) * 100)}%
-          </Typography>
-          <Typography variant="h6" gutterBottom>
-            {result.answers.filter(a => isAnswerCorrect(a.userAnswer, a.correctAnswer)).length} out of {result.answers.length} correct
-          </Typography>
-          <Typography variant="subtitle1" color="text.secondary">
-            Time Taken: {Math.floor(result.timeSpent / 60)}m {result.timeSpent % 60}s
-          </Typography>
-        </Box>
-
-        <Typography variant="h6" gutterBottom sx={{ mt: 4, mb: 2 }}>
-          Detailed Results
-        </Typography>
-        <Box sx={{ overflowX: 'auto' }}>
-          <Table sx={quizStyles.resultTable}>
-            <TableHead>
-              <TableRow>
-                <TableCell>Question</TableCell>
-                <TableCell>Your Answer</TableCell>
-                <TableCell>Correct Answer</TableCell>
-                <TableCell align="center">Result</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {result.answers.map((answer, index) => {
-                const correct = isAnswerCorrect(answer.userAnswer, answer.correctAnswer);
-                return (
-                  <TableRow 
-                    key={index}
-                    sx={correct ? quizStyles.correctAnswer : quizStyles.wrongAnswer}
-                  >
-                    <TableCell>{answer.question}</TableCell>
-                    <TableCell>{answer.userAnswer || 'No answer'}</TableCell>
-                    <TableCell>{answer.correctAnswer}</TableCell>
-                    <TableCell align="center">
-                      {correct ? (
-                        <Typography color="success.dark" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          <CheckCircleIcon sx={{ mr: 1 }} /> Correct
-                        </Typography>
-                      ) : (
-                        <Typography color="error.dark" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          <CancelIcon sx={{ mr: 1 }} /> Incorrect
-                        </Typography>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </Box>
-
-        <Box sx={{ mt: 4, display: 'flex', gap: 2 }}>
-          <Button 
-            variant="outlined"
-            onClick={() => navigate('/dashboard')}
-          >
-            Back to Dashboard
-          </Button>
-          <Button 
-            variant="contained"
-            color="primary"
-            onClick={() => {
-              if (result.testId && result.testId._id) {
-                navigate(`/quiz/${result.testId._id}`);
-              } else {
-                console.error('Invalid testId for navigation:', result.testId);
-              }
-            }}
-          >
-            Retake Quiz
-          </Button>
-        </Box>
       </Paper>
+
+      <Dialog
+        open={showShareDialog}
+        onClose={() => setShowShareDialog(false)}
+      >
+        <DialogTitle>Share Results</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Share your quiz results with others!
+          </DialogContentText>
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="body2">
+              Score: {Math.round((attempt.answers.filter(a => a.isCorrect).length / attempt.answers.length) * 100)}%
+            </Typography>
+            <Typography variant="body2">
+              Time: {Math.floor(attempt.timeSpent / 60)}m {attempt.timeSpent % 60}s
+            </Typography>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShowShareDialog(false)}>Close</Button>
+          <Button 
+            onClick={() => {
+              navigator.clipboard.writeText(
+                `I scored ${Math.round((attempt.answers.filter(a => a.isCorrect).length / attempt.answers.length) * 100)}% on my quiz!`
+              );
+              setShowShareDialog(false);
+            }}
+            color="primary"
+          >
+            Copy to Clipboard
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={showDeleteDialog}
+        onClose={() => !deleting && setShowDeleteDialog(false)}
+      >
+        <DialogTitle>Delete All Attempts?</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Are you sure you want to delete all attempts for this test? This action cannot be undone.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button 
+            onClick={() => setShowDeleteDialog(false)}
+            disabled={deleting}
+          >
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleDeleteAllAttempts}
+            color="error"
+            variant="contained"
+            disabled={deleting}
+          >
+            {deleting ? 'Deleting...' : 'Delete All'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Container>
   );
 };

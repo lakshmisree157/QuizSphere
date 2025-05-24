@@ -131,10 +131,11 @@ router.post('/upload', upload.single('pdf'), async (req, res) => {
       throw new Error('Invalid response from ML service');
     }    const formattedQuestions = mlResponse.data.questions.map(q => ({
       content: q.content || q.question,
-      options: Array.isArray(q.options) ? q.options : [],
+      options: q.type === 'MCQ' ? (Array.isArray(q.options) ? q.options : []) :
+              q.type === 'YES_NO' ? ['Yes', 'No'] : [],
       correctAnswer: q.correctAnswer || q.answer,
       bloomLevel: q.bloomLevel || q.bloom_level || 1,
-      type: q.type || 'MCQ',
+      type: q.type || (q.options ? 'MCQ' : q.answer === 'Yes' || q.answer === 'No' ? 'YES_NO' : 'DESCRIPTIVE'),
       mainTopic: q.mainTopic || q.topic || 'General',
       subtopic: q.subtopic || 'General',
       uniqueId: uuidv4()

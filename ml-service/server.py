@@ -14,7 +14,6 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
-
 import spacy
 from sentence_transformers import SentenceTransformer
 from collections import defaultdict
@@ -33,10 +32,6 @@ import os
 import base64
 from concurrent.futures import ThreadPoolExecutor
 
-# Import new modules
-from bloom_predictor import bloom_predictor, predict_bloom_level_for_paragraph
-from question_selector import select_questions
-
 # Load environment variables at the start
 load_dotenv()
 
@@ -54,7 +49,7 @@ app = FastAPI()
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[CLIENT_URL],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -169,19 +164,6 @@ def estimate_k(num_sentences):
     else:
         return 4
 
-def expand_bloom_verbs(bloom_verb_lists):
-    for level, verbs in bloom_verb_lists.items():
-        for verb in verbs:
-            lemma = nlp(verb.lower())[0].lemma_
-            expanded_verb_to_bloom[lemma].add(level)
-            expanded_verb_to_bloom[verb.lower()].add(level)
-            for syn in wn.synsets(verb.lower(), pos=wn.VERB):
-                for l in syn.lemmas():
-                    syn_verb = l.name().replace("_", " ").lower()
-                    syn_lemma = nlp(syn_verb)[0].lemma_
-                    expanded_verb_to_bloom[syn_lemma].add(level)
-                    expanded_verb_to_bloom[syn_verb].add(level)
-
 def preprocess_paragraph(paragraph_text):
     if not paragraph_text or paragraph_text.isspace():
         return ""
@@ -276,16 +258,6 @@ def basic_bt_mapping(text):
     bloom_level = determine_bloom_level(feature_vector)
     return bloom_level
 
-# Replace basic_bt_mapping with RF model based prediction
-def rf_model_bt_mapping(text):
-    try:
-        bloom_level = predict_bloom_level_for_paragraph(text)
-        return int(bloom_level)
-    except Exception as e:
-        logger.error(f"RF model bloom level prediction failed: {str(e)}")
-        # fallback to heuristic
-        return basic_bt_mapping(text)
-
 def extract_linguistic_features(text):
     """Extract linguistic features for Bloom's taxonomy classification."""
     feature_vector = extract_feature_vector(text)
@@ -304,6 +276,7 @@ def extract_linguistic_features(text):
 def generate_questions_groq(content, bloom_level):
     logger.info(f"Generating questions for bloom level {bloom_level}")
     
+    # Limit content length to avoid payload size issues
     max_content_length = 4000
     if len(content) > max_content_length:
         content = content[:max_content_length]
@@ -319,10 +292,14 @@ def generate_questions_groq(content, bloom_level):
         "messages": [{
             "role": "user",
             "content": f"""Generate questions based on this content and Bloom's level {bloom_level}.
-
+            
 Content: {content}
 
-Instructions: Generate a mix of question types including Multiple Choice Questions (MCQ), Descriptive, Yes/No, True/False, and Fill in the Blanks focusing on Bloom's level {bloom_level}.
+Instructions: Generate 3 questions focusing on Bloom's level {bloom_level}. Include a mix of:
+1. Multiple choice questions (MCQ)
+2. Yes/No questions
+3. Descriptive questions
+
 Format the response as a JSON array ONLY with no additional text.
 Example:
 [
@@ -333,13 +310,86 @@ Example:
     "answer": "A"
   }},
   {{
-    "type": "Descriptive",
-    "question": "Explain the concept of X.",
-    "answer": ""
+    "type": "YES_NO",
+    "question": "Is X true?",
+    "answer": "Yes"
   }},
   {{
-    "type": "TrueFalse",
-    "question": "X is true.",
+    "type": "DESCRIPTIVE",
+    "question": "Explain the concept of X.",
+    "answer": "A detailed explanation of X..."
+  }}
+]"""
+        }],
+        "temperature": 0.7,
+        "max_tokens": 1000
+    }
+
+    try:
+        logger.info("Sending request to GROQ API...")
+        response = requests.post(GROQ_API_URL, headers=headers, json=prompt, timeout=30)
+        logger.info(f"GROQ API Status Code: {response.status_code}")
+        logger.info(f"GROQ API Response: {response.text[:500]}...")  # Log first 500 chars
+        
+        response.raise_for_status()
+        result = response.json()
+        
+        questions_text = result['choices'][0]['message']['content'].strip()
+        logger.info(f"Raw questions text: {questions_text[:500]}...")  # Log first 500 chars
+        
+        try:
+            questions = json.loads(questions_text)
+            logger.info("Successfully parsed response as JSON")
+        except json.JSONDecodeError:
+            logger.info("Failed to parse response directly, trying to extract JSON array...")
+            json_start = questions_text.find('[')
+            json_end = questions_text.rfind(']') + 1
+            
+            if json_start == -1 or json_end == 0:
+                logger.error(f"No JSON array found in response: {questions_text}")
+                raise ValueError("No valid JSON found in response")
+            
+            questions_json = questions_text[json_start:json_end]
+            logger.info(f"Extracted JSON: {questions_json}")
+            questions = json.loads(questions_json)
+            logger.info("Successfully parsed extracted JSON")
+
+        # Validate response format and normalize question types
+        normalized_questions = []
+        for q in questions:
+            if not isinstance(q, dict) or 'type' not in q or 'question' not in q or 'answer' not in q:
+                continue
+                
+            # Normalize question type
+            q_type = q['type'].upper()
+            if q_type not in ['MCQ', 'YES_NO', 'DESCRIPTIVE']:
+                continue
+                
+            # For MCQ questions, ensure options exist
+            if q_type == 'MCQ':
+                if 'options' not in q or not isinstance(q['options'], list) or len(q['options']) < 2:
+                    continue
+                # Clean up options
+                q['options'] = [opt.replace("A) ", "").replace("B) ", "")
+                              .replace("C) ", "").replace("D) ", "") 
+                              for opt in q['options']]
+            
+            # For YES_NO questions, normalize answer
+            elif q_type == 'YES_NO':
+                q['answer'] = 'Yes' if q['answer'].lower() in ['yes', 'true', 'y'] else 'No'
+                q['options'] = ['Yes', 'No']
+            
+            normalized_questions.append(q)
+
+        if not normalized_questions:
+            raise ValueError("No valid questions generated")
+
+        logger.info(f"Generated {len(normalized_questions)} questions")
+        return normalized_questions
+
+    except Exception as e:
+        logger.error(f"Error in generate_questions_groq: {str(e)}")
+        raise
 
 # Function to process chunks in parallel
 def process_chunk(chunk, bloom_level):
@@ -371,9 +421,7 @@ def chunk_content(content, max_length=3000):
     return chunks
 
 def convert_numpy_types(data):
-    """
-    Recursively convert numpy types to native Python types.
-    """
+    """Recursively convert numpy types to native Python types."""
     if isinstance(data, np.integer):
         return int(data)
     elif isinstance(data, np.floating):
@@ -410,7 +458,7 @@ async def generate_questions(data: PDFContent):
                 if not processed_content:
                     continue
 
-                bloom_level = rf_model_bt_mapping(processed_content)
+                bloom_level = basic_bt_mapping(processed_content)
                 chunks = chunk_content(processed_content)
 
                 for chunk in chunks:
@@ -418,25 +466,37 @@ async def generate_questions(data: PDFContent):
                         questions = generate_questions_groq(chunk, bloom_level)
                         for q in questions:
                             formatted_question = {
-                                "content": q.get("question", ""),
+                                "content": q["question"],
+                                "type": q["type"],
                                 "bloomLevel": bloom_level,
-                                "type": q.get("type", "MCQ"),
                                 "mainTopic": main_topic,
                                 "subtopic": subtopic
                             }
-                            if formatted_question["type"] == "MCQ":
-                                formatted_question["options"] = q.get("options", [])
-                                formatted_question["correctAnswer"] = q.get("answer", "")
-                            elif formatted_question["type"] in ["YesNo", "TrueFalse"]:
-                                formatted_question["correctAnswer"] = q.get("answer", "")
-                            # Descriptive and Fill in the Blanks may not have options or correctAnswer
+                            
+                            # Add type-specific fields
+                            if q["type"] == "MCQ":
+                                formatted_question.update({
+                                    "options": q["options"],
+                                    "correctAnswer": q["answer"]
+                                })
+                            elif q["type"] == "YES_NO":
+                                formatted_question.update({
+                                    "options": ["Yes", "No"],
+                                    "correctAnswer": q["answer"]
+                                })
+                            else:  # DESCRIPTIVE
+                                formatted_question.update({
+                                    "options": [],
+                                    "correctAnswer": q["answer"]
+                                })
+                            
                             topic_questions.append(formatted_question)
+                            logger.info(f"Added question: {formatted_question['content'][:50]}...")
                     except Exception as e:
                         logger.error(f"Error processing chunk: {str(e)}")
 
-            selected_questions = select_questions(topic_questions)
-            all_questions.extend(selected_questions)
-            topic_breakdown[main_topic] = len(selected_questions)
+            all_questions.extend(topic_questions)
+            topic_breakdown[main_topic] = len(topic_questions)
 
         if not all_questions:
             raise HTTPException(status_code=500, detail="No questions generated")
@@ -447,6 +507,7 @@ async def generate_questions(data: PDFContent):
             "topicBreakdown": topic_breakdown
         }
 
+        # Convert numpy types to native Python types
         return convert_numpy_types(response_data)
 
     except Exception as e:
@@ -511,20 +572,33 @@ async def upload_pdf(file: UploadFile):
                     
                     # Format and add metadata
                     for q in section_questions:
+                        formatted_question = {
+                            "content": q["question"],
+                            "type": q["type"],
+                            "bloomLevel": section_bloom_level,
+                            "mainTopic": main_topic,
+                            "subtopic": subtopic
+                        }
+                        
+                        # Add type-specific fields
                         if q["type"] == "MCQ":
-                            formatted_question = {
-                                "content": q["question"],
-                                "options": [opt.replace("A) ", "").replace("B) ", "")
-                                          .replace("C) ", "").replace("D) ", "") 
-                                          for opt in q["options"]],
-                                "correctAnswer": q["answer"],
-                                "bloomLevel": section_bloom_level,
-                                "type": "MCQ",
-                                "mainTopic": main_topic,
-                                "subtopic": subtopic
-                            }
-                            topic_questions.append(formatted_question)
-                            logger.info(f"Added question: {formatted_question['content'][:50]}...")
+                            formatted_question.update({
+                                "options": q["options"],
+                                "correctAnswer": q["answer"]
+                            })
+                        elif q["type"] == "YES_NO":
+                            formatted_question.update({
+                                "options": ["Yes", "No"],
+                                "correctAnswer": q["answer"]
+                            })
+                        else:  # DESCRIPTIVE
+                            formatted_question.update({
+                                "options": [],
+                                "correctAnswer": q["answer"]
+                            })
+                        
+                        topic_questions.append(formatted_question)
+                        logger.info(f"Added question: {formatted_question['content'][:50]}...")
                 except Exception as e:
                     logger.error(f"Failed to process section {main_topic}/{subtopic}: {str(e)}")
                     continue
