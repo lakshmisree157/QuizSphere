@@ -7,6 +7,7 @@ const User = require('../models/user');
 // Registration route
 router.post('/register', async (req, res) => {
   try {
+    console.log('Registration request body:', req.body);
     const { username, name, email, password } = req.body;
 
     // Validate input
@@ -23,9 +24,12 @@ router.post('/register', async (req, res) => {
     // Create new user
     const user = new User({
       username,
+      name,
       email,
       password // Password will be hashed by the pre-save middleware
     });
+
+    console.log('User instance before save:', user);
 
     await user.save();
 
@@ -42,7 +46,8 @@ router.post('/register', async (req, res) => {
       user: {
         id: user._id,
         username: user.username,
-        email: user.email
+        email: user.email,
+        name: user.name
       }
     });
   } catch (error) {
@@ -51,7 +56,6 @@ router.post('/register', async (req, res) => {
   }
 });
 
-// Login route
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -64,7 +68,6 @@ router.post('/login', async (req, res) => {
     if (!user) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
-    console.log('Login user object:', user);
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
@@ -82,11 +85,11 @@ router.post('/login', async (req, res) => {
       user: {
         _id: user._id,
         username: user.username,
-        email: user.email
+        email: user.email,
+        name: user.name
       }
     });
   } catch (error) {
-    console.error('Login error:', error);
     res.status(500).json({ error: 'Login failed' });
   }
 });

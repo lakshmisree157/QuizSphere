@@ -1,0 +1,78 @@
+Adaptive Quiz Project - Setup and Run Instructions
+
+1. Clone the repository:
+   git clone <repository_url>
+   cd adaptive-quiz
+
+2. Setup MongoDB:
+   - Ensure MongoDB is installed and running on your machine.
+   - Obtain the MongoDB connection string (e.g., mongodb://localhost:27017/your-db-name).
+
+3. Create environment variable files:
+
+   a) Client (.env file in client/ directory):
+      REACT_APP_API_URL=http://localhost:5000
+
+   b) Server (.env file in server/ directory):
+      MONGODB_URI=your_mongodb_connection_string
+      CLIENT_URL=http://localhost:3000
+      PORT=5000
+      JWT_SECRET=your_jwt_secret
+      NODE_ENV=development
+
+   c) ML Service (.env file in ml-service/ directory):
+      GROQ_API_KEY=your_groq_api_key
+      CLIENT_URL=http://localhost:3000
+      PORT=8000
+
+4. Install dependencies:
+
+   a) Client:
+      cd client
+      npm install
+
+   b) Server:
+      cd ../server
+      npm install
+
+   c) ML Service:
+      cd ../ml-service
+      python -m venv venv
+      # Activate virtual environment:
+      # Windows:
+      .\venv\Scripts\activate
+      # Linux/Mac:
+      source venv/bin/activate
+      pip install -r requirements.txt
+      python -c "import nltk; nltk.download('punkt'); nltk.download('stopwords'); nltk.download('wordnet'); nltk.download('averaged_perceptron_tagger')"
+      python -m spacy download en_core_web_sm
+
+5. Run the services:
+
+   a) ML Service:
+      uvicorn server:app --host 127.0.0.1 --port 8000 --reload
+
+   b) Server:
+      npm start
+      # Or for development with auto-restart:
+      npm run dev
+
+   c) Client:
+      cd ../client
+      npm start
+
+6. Troubleshooting JWT 500 error:
+
+   - Ensure the JWT_SECRET in server/.env is set and matches the secret used to sign tokens.
+   - Verify the token sent in the Authorization header is valid and correctly formatted as "Bearer <token>".
+   - Check server logs for detailed error messages.
+   - Make sure the server is restarted after any changes to .env.
+   - Confirm that the client is sending the token properly in requests requiring authentication.
+
+7. Notes:
+
+   - Adjust ports in .env files if needed to avoid conflicts.
+   - Make sure MongoDB is accessible via the connection string.
+   - The .env files are excluded from version control; ensure they are created locally.
+
+This completes the setup and run instructions for the Adaptive Quiz project.

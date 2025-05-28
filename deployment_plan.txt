@@ -1,0 +1,50 @@
+Deployment Plan for Adaptive Quiz Project: Frontend on Vercel, Backend on Render
+
+1. Prepare Backend for Deployment on Render:
+   - Ensure your backend server (in the 'server' directory) is ready for production.
+   - In Render dashboard, create a new Web Service.
+   - Connect your GitHub repository and select the 'server' directory.
+   - Set the build and start commands:
+     - Build: (if any, usually none for Node.js)
+     - Start: npm start
+   - Set environment variables in Render:
+     - MONGODB_URI: Your production MongoDB connection string (e.g., from MongoDB Atlas)
+     - CLIENT_URL: The URL of your frontend app on Vercel (e.g., https://your-frontend.vercel.app)
+     - PORT: 5000 (or as needed)
+     - JWT_SECRET: Your JWT secret key
+     - NODE_ENV: production
+   - Deploy the backend service.
+
+2. Prepare Frontend for Deployment on Vercel:
+   - In Vercel dashboard, create a new project.
+   - Connect your GitHub repository and select the 'client' directory.
+   - Set environment variables in Vercel:
+     - REACT_APP_API_URL: The URL of your backend service on Render (e.g., https://your-backend.onrender.com)
+   - Vercel will automatically build and deploy the React app.
+
+3. ML Service Deployment (Optional):
+   - If you want to deploy the ML service, consider using Render or another Python-friendly hosting.
+   - Set environment variables including GROQ_API_KEY, CLIENT_URL (frontend URL), and PORT.
+   - Ensure the ML service can communicate with the backend and frontend as needed.
+
+4. Establishing Proper Connection:
+   - The frontend uses REACT_APP_API_URL to make API calls to the backend.
+   - The backend uses CLIENT_URL to allow CORS from the frontend domain.
+   - The backend connects to MongoDB using MONGODB_URI.
+   - JWT_SECRET is used by the backend to sign and verify tokens.
+   - GROQ_API_KEY is used by the ML service for its API calls.
+
+5. Testing After Deployment:
+   - Access the frontend URL on Vercel.
+   - Perform login and other actions that require backend API calls.
+   - Check backend logs on Render for any errors.
+   - Verify that JWT authentication works without 500 errors.
+   - Ensure ML service endpoints are reachable if used.
+
+6. Additional Tips:
+   - Keep your .env files local and do not commit them to Git.
+   - Use Render and Vercel dashboards to manage environment variables securely.
+   - Update environment variables in dashboards if you change URLs or keys.
+   - Use HTTPS URLs for all services in production.
+
+This plan ensures a proper connection between frontend and backend with secure environment variable management.

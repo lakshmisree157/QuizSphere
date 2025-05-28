@@ -8,9 +8,9 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
 
   // Log user state changes for debugging
-  React.useEffect(() => {
-    console.log('AuthContext user state changed:', user);
-  }, [user]);
+  // React.useEffect(() => {
+  //   console.log('AuthContext user state changed:', user);
+  // }, [user]);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
@@ -34,15 +34,14 @@ export const AuthProvider = ({ children }) => {
 
       const { token, user: userData } = response.data;
       
-      // Store complete user data
+      // Store complete user data including name
       const userToStore = {
         _id: userData._id,
         username: userData.username || '',
-        email: userData.email
+        email: userData.email,
+        name: userData.name || ''
       };
 
-      console.log('Storing user to localStorage:', userToStore);
-      
       localStorage.setItem('token', token);
       localStorage.setItem('user', JSON.stringify(userToStore));
       
