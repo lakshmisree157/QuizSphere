@@ -1,4 +1,5 @@
 const BASE_URL = process.env.REACT_APP_API_URL;
+const ML_SERVICE_URL = process.env.REACT_APP_ML_SERVICE_URL || "http://localhost:8000";
 
 export const API_ROUTES = {
   AUTH: {
@@ -16,5 +17,8 @@ export const API_ROUTES = {
     LIST: `${BASE_URL}/api/quiz-attempts`,
     GET: (id) => `${BASE_URL}/api/quiz-attempts/${id}`,
     CREATE: `${BASE_URL}/api/quiz-attempts`
+  },
+  FEEDBACK: {
+    GENERATE: `${ML_SERVICE_URL}/api/feedback/generate`
   }
 };

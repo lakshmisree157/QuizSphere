@@ -476,6 +476,64 @@ async def startup_event():
     except Exception as e:
         logger.error(f"BloomPredictor test failed: {e}")
 
+from fastapi import Body
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+
+@app.post("/api/evaluate/similarity")
+async def evaluate_similarity(data: dict = Body(...)):
+    user_answer = data.get('userAnswer', '')
+    correct_answer = data.get('correctAnswer', '')
+
+    vectorizer = TfidfVectorizer().fit_transform([user_answer, correct_answer])
+    similarity = cosine_similarity(vectorizer[0:1], vectorizer[1:2])[0][0]
+
+    return {"similarity": similarity}
+
+from fastapi import Body
+
+@app.post("/api/feedback/generate")
+async def generate_feedback(data: dict = Body(...)):
+    user_answer = data.get("userAnswer", "").strip()
+    correct_answer = data.get("correctAnswer", "").strip()
+
+    if not user_answer or not correct_answer:
+        return {"error": "Both userAnswer and correctAnswer are required."}
+
+    prompt = f"""
+You are an educational assistant. Compare the user's answer with the correct answer.
+
+User's answer: "{user_answer}"
+Correct answer: "{correct_answer}"
+
+If the user's answer is correct, respond with a simple confirmation message.
+If the user's answer is incorrect, provide a clear and concise explanation of where the user went wrong based on the correct answer.
+
+Provide the feedback in 2-3 sentences.
+"""
+
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "model": "llama-3.3-70b-versatile",
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.7,
+        "max_tokens": 200
+    }
+
+    try:
+        response = requests.post(GROQ_API_URL, headers=headers, json=payload, timeout=30)
+        response.raise_for_status()
+        result = response.json()
+        feedback_text = result['choices'][0]['message']['content'].strip()
+        return {"feedback": feedback_text}
+    except Exception as e:
+        logger.error(f"Error generating feedback: {str(e)}")
+        return {"error": "Failed to generate feedback"}
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="127.0.0.1", port=8000)

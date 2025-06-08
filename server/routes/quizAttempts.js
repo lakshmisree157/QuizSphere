@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
+const axios = require('axios');
 const QuizAttempt = require('../models/quizAttempt');
 const Test = require('../models/test');
 const Question = require('../models/question');
@@ -15,32 +16,47 @@ function extractOptionLetter(answer) {
   return match ? match[0].toUpperCase() : '';
 }
 
+// Helper to call ml-service similarity endpoint
+async function getSimilarityFromMLService(userAnswer, correctAnswer) {
+  try {
+    const response = await axios.post('http://127.0.0.1:8000/api/evaluate/similarity', {
+      userAnswer,
+      correctAnswer
+    });
+    //print the output
+    console.log('ML Service Similarity Response:', response.data);
+    return response.data.similarity;
+  } catch (error) {
+    console.error('Error calling ML service similarity endpoint:', error.message);
+    return 0; // fallback similarity
+  }
+}
+
 // Helper to determine correctness based on question type
-function isAnswerCorrect(userAnswer, correctAnswer, type) {
+async function isAnswerCorrect(userAnswer, correctAnswer, type) {
   if (!userAnswer) return false;
-  
-    switch (type) {
-      case 'MCQ':
-        // Compare full trimmed, case-insensitive strings for MCQ
-        return userAnswer.trim().toLowerCase() === correctAnswer.trim().toLowerCase();
-      case 'YES_NO':
-        return userAnswer.trim().toLowerCase() === correctAnswer.trim().toLowerCase();
-      case 'DESCRIPTIVE':
-        return userAnswer.trim().toLowerCase() === correctAnswer.trim().toLowerCase();
-        
-      case 'SHORT_ANSWER':
-        //proper logic for descriptive and short answer question evaluation with matching keywords
-        return userAnswer.trim().toLowerCase() === correctAnswer.trim().toLowerCase();
-      case 'FILL_IN_BLANK':
-        // Assuming fill-in-the-blank answers are compared as strings
-        return userAnswer.trim().toLowerCase() === correctAnswer.trim().toLowerCase();
-      case 'TRUE_FALSE':
-        // Compare full trimmed, case-insensitive strings for TRUE_FALSE
-        return userAnswer.trim().toLowerCase() === correctAnswer.trim().toLowerCase();
-      
-      default:
-        return false;
-    }
+
+  switch (type) {
+    case 'MCQ':
+      // Compare full trimmed, case-insensitive strings for MCQ
+      return userAnswer.trim().toLowerCase() === correctAnswer.trim().toLowerCase();
+    case 'YES_NO':
+      return userAnswer.trim().toLowerCase() === correctAnswer.trim().toLowerCase();
+    case 'DESCRIPTIVE':
+    case 'SHORT_ANSWER':
+      // Use similarity from ML service for descriptive and short answer
+      const similarity = await getSimilarityFromMLService(userAnswer, correctAnswer);
+      const threshold = 0.2; // similarity threshold for correctness
+      return similarity >= threshold;
+    case 'FILL_IN_BLANK':
+      // Assuming fill-in-the-blank answers are compared as strings
+      return userAnswer.trim().toLowerCase() === correctAnswer.trim().toLowerCase();
+    case 'TRUE_FALSE':
+      // Compare full trimmed, case-insensitive strings for TRUE_FALSE
+      return userAnswer.trim().toLowerCase() === correctAnswer.trim().toLowerCase();
+    default:
+      return false;
+  }
 }
 
 // Get quiz attempt by ID
@@ -243,14 +259,15 @@ router.post('/', async (req, res) => {
 
     // Calculate correctness and score
     let correctCount = 0;
-    const updatedAnswers = answers.map(answer => {
-      const isCorrect = isAnswerCorrect(answer.userAnswer, answer.correctAnswer, answer.type);
+    const updatedAnswers = [];
+    for (const answer of answers) {
+      const isCorrect = await isAnswerCorrect(answer.userAnswer, answer.correctAnswer, answer.type);
       if (isCorrect) correctCount++;
-      return {
+      updatedAnswers.push({
         ...answer,
         isCorrect
-      };
-    });
+      });
+    }
 
     const score = (correctCount / answers.length) * 100;
 

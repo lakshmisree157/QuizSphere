@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
   Container,
   Typography,
@@ -32,6 +32,9 @@ import CancelIcon from '@mui/icons-material/Cancel';
 import ShareIcon from '@mui/icons-material/Share';
 import DeleteIcon from '@mui/icons-material/Delete';
 import { quizStyles } from '../styles/components';
+import { API_ROUTES } from '../config/api';
+
+
 
 const QuizResult = () => {
   const { quizId } = useParams();
@@ -43,6 +46,8 @@ const QuizResult = () => {
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [feedbacks, setFeedbacks] = useState({}); // Store feedback keyed by questionId
+  const [loadingFeedbacks, setLoadingFeedbacks] = useState({}); // Track loading state per question
 
   useEffect(() => {
     const fetchAttempt = async () => {
@@ -109,6 +114,37 @@ const QuizResult = () => {
         });
 
         setAttempt(response.data.attempt);
+
+        // Fetch feedback for descriptive and short answer questions
+        const answersToFetch = response.data.attempt.answers.filter(a =>
+          ['DESCRIPTIVE', 'SHORT_ANSWER'].includes((a.type || '').toUpperCase())
+        );
+
+        for (const answer of answersToFetch) {
+          setLoadingFeedbacks(prev => ({ ...prev, [answer.questionId]: true }));
+          try {
+            const feedbackResponse = await axios.post(
+              API_ROUTES.FEEDBACK.GENERATE,
+              {
+                userAnswer: answer.userAnswer || '',
+                correctAnswer: answer.correctAnswer || ''
+              },
+              {
+                headers: { 'Authorization': `Bearer ${token}` }
+              }
+            );
+            if (feedbackResponse.data?.feedback) {
+              setFeedbacks(prev => ({ ...prev, [answer.questionId]: feedbackResponse.data.feedback }));
+            } else {
+              setFeedbacks(prev => ({ ...prev, [answer.questionId]: 'No feedback available.' }));
+            }
+          } catch (error) {
+            setFeedbacks(prev => ({ ...prev, [answer.questionId]: 'Failed to fetch feedback.' }));
+          } finally {
+            setLoadingFeedbacks(prev => ({ ...prev, [answer.questionId]: false }));
+          }
+        }
+
       } catch (err) {
         console.error('Error fetching quiz attempt:', err);
         const errorMessage = err.response?.data?.error || err.message || 'Failed to load quiz results';
@@ -273,9 +309,23 @@ const QuizResult = () => {
         )}
         
         {questionType === 'DESCRIPTIVE' && (
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 1, fontStyle: 'italic' }}>
-            Note: Descriptive answers are evaluated based on key concepts and understanding.
-          </Typography>
+          <>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1, fontStyle: 'italic' }}>
+              Note: Descriptive answers are evaluated based on key concepts and understanding.
+            </Typography>
+            {loadingFeedbacks[answer.questionId] ? (
+              <Box sx={{ display: 'flex', alignItems: 'center', mt: 1 }}>
+                <CircularProgress size={16} />
+                <Typography variant="body2" sx={{ ml: 1 }}>
+                  Loading feedback...
+                </Typography>
+              </Box>
+            ) : (
+              <Typography variant="body2" color="primary.main" sx={{ mt: 1 }}>
+                {feedbacks[answer.questionId] || 'No feedback available.'}
+              </Typography>
+            )}
+          </>
         )}
       </Box>
     );

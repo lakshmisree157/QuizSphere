@@ -1,14 +1,4 @@
 import React, { useState } from 'react';
-import { 
-  Box, 
-  Button, 
-  TextField, 
-  Typography, 
-  Alert,
-  Container, 
-  Paper,
-  Link 
-} from '@mui/material';
 import { useNavigate, Link as RouterLink } from 'react-router-dom';
 import axios from 'axios';
 
@@ -46,71 +36,80 @@ const Register = () => {
   };
 
   return (
-    <Container component="main" maxWidth="xs">
-      <Box sx={{ mt: 8 }}>
-        <Paper elevation={3} sx={{ p: 4 }}>
-          <Typography component="h1" variant="h5" align="center">
-            Register
-          </Typography>
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 px-4">
+      <div className="w-full max-w-md p-8 bg-white rounded-3xl shadow-2xl transition-all">
+        <div className="mb-6 text-center">
+          <h1 className="text-3xl font-bold text-indigo-600">Join AI Quiz Generator</h1>
+          <p className="text-sm text-gray-500 mt-1">Create smarter quizzes in seconds</p>
+        </div>
 
-          {error && (
-            <Alert severity="error" sx={{ mt: 2 }}>
-              {error}
-            </Alert>
-          )}
+        {error && (
+          <div className="mb-4 text-sm text-red-600 bg-red-100 px-4 py-2 rounded-md border border-red-300 animate-pulse">
+            {error}
+          </div>
+        )}
 
-          <Box component="form" onSubmit={handleSubmit} sx={{ mt: 3 }}>
-            <TextField
-              margin="normal"
-              required
-              fullWidth
-              label="Username"
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+            <input
+              type="text"
+              className="w-full px-4 py-2 border border-gray-300 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              placeholder="Username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
             />
-            <TextField
-              margin="normal"
-              required
-              fullWidth
-              label="Name"
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+            <input
+              type="text"
+              className="w-full px-4 py-2 border border-gray-300 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              placeholder="Full Name"
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
-            <TextField
-              margin="normal"
-              required
-              fullWidth
-              label="Email Address"
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+            <input
               type="email"
+              className="w-full px-4 py-2 border border-gray-300 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              placeholder="you@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
-            <TextField
-              margin="normal"
-              required
-              fullWidth
-              label="Password"
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+            <input
               type="password"
+              className="w-full px-4 py-2 border border-gray-300 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
-            <Button
-              type="submit"
-              fullWidth
-              variant="contained"
-              sx={{ mt: 3, mb: 2 }}
-            >
-              Register
-            </Button>
-            <Box sx={{ textAlign: 'center' }}>
-              <Link component={RouterLink} to="/login" variant="body2">
-                Already have an account? Sign in
-              </Link>
-            </Box>
-          </Box>
-        </Paper>
-      </Box>
-    </Container>
+          </div>
+
+          <button
+            type="submit"
+            className="w-full py-2 text-white bg-indigo-600 hover:bg-indigo-700 font-medium rounded-xl transition-all shadow-md hover:shadow-indigo-400/40"
+          >
+            Create Account
+          </button>
+
+          <p className="text-xs text-center text-gray-500 mt-3">
+            Already have an account?{' '}
+            <RouterLink to="/login" className="text-indigo-500 hover:underline">
+              Sign In
+            </RouterLink>
+          </p>
+        </form>
+      </div>
+    </div>
   );
 };
 
