@@ -91,11 +91,16 @@ const Dashboard = () => {
     const stats = {
       MCQ: 0,
       YES_NO: 0,
-      DESCRIPTIVE: 0
+      DESCRIPTIVE: 0,
+      TRUE_FALSE: 0,
+      SHORT_ANSWER: 0
     };
 
     questions?.forEach(q => {
-      const type = q.type || 'MCQ';
+      const type = (q.type || 'MCQ').toUpperCase().trim();
+      if (!stats.hasOwnProperty(type)) {
+        stats[type] = 0;
+      }
       stats[type]++;
     });
 

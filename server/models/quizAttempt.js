@@ -20,13 +20,13 @@ const quizAttemptSchema = new mongoose.Schema({
     isCorrect: Boolean,
     type: {
       type: String,
-      enum: ['MCQ', 'YES_NO', 'DESCRIPTIVE'],
+      enum: ['MCQ', 'YES_NO', 'TRUE_FALSE', 'DESCRIPTIVE', 'FILL_IN_BLANK', 'SHORT_ANSWER'],
       required: true
     },
     options: [{
       type: String,
       required: function() {
-        return this.type === 'MCQ' || this.type === 'YES_NO';
+        return this.type === 'MCQ' || this.type === 'YES_NO'|| this.type === 'TRUE_FALSE';
       }
     }]
   }],

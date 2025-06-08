@@ -132,7 +132,31 @@ const QuestionList = () => {
             onChange={(e) => handleAnswerSelect(question.uniqueId, e.target.value)}
           />
         );
-      
+
+      case 'TRUE_FALSE':
+        return (
+          <FormControl component="fieldset">
+            <RadioGroup
+              value={selectedAnswers[question.uniqueId] || ''}
+              onChange={(e) => handleAnswerSelect(question.uniqueId, e.target.value)}
+            >
+              <FormControlLabel value="True" control={<Radio />} label="True" />
+              <FormControlLabel value="False" control={<Radio />} label="False" />
+            </RadioGroup>
+          </FormControl>
+        );
+
+      case 'SHORT_ANSWER':
+        return (
+          <TextField
+            fullWidth
+            variant="outlined"
+            placeholder="Enter your answer here..."
+            value={selectedAnswers[question.uniqueId] || ''}
+            onChange={(e) => handleAnswerSelect(question.uniqueId, e.target.value)}
+          />
+        );
+
       default:
         return null;
     }

@@ -1,4 +1,5 @@
 const path = require('path');
+const webpack = require('webpack');
 
 module.exports = {
   // ... other config ...
@@ -12,6 +13,19 @@ module.exports = {
       "util": require.resolve("util/")
     }
   },
+  module: {
+    rules: [
+      // ... other rules ...
+      {
+        test: /\.css$/i,
+        use: [
+          'style-loader',
+          'css-loader',
+          'postcss-loader'
+        ],
+      },
+    ],
+  },
   plugins: [
     // ... other plugins ...
     new webpack.ProvidePlugin({
@@ -19,4 +33,4 @@ module.exports = {
       process: 'process/browser',
     }),
   ]
-}; 
+};

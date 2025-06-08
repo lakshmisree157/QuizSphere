@@ -40,12 +40,55 @@ const checkMLService = async (retries = 3) => {
   return false;
 };
 
-// Get all questions for a user
+
+
+// Get all questions for a user (updated to fetch from both Question and Test models)
 router.get('/', async (req, res) => {
   try {
-    const questions = await Question.find({ userId: req.user._id })
-      .sort({ createdAt: -1 });
-    res.json(questions);
+    // Fetch questions from Question model
+    const questionsFromQuestion = await Question.find({ userId: req.user._id })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // Fetch tests for user and extract questions
+    const tests = await Test.find({ userId: req.user._id }).lean();
+
+    // Extract questions from tests and add default metadata if missing
+    let questionsFromTest = [];
+    tests.forEach(test => {
+      if (Array.isArray(test.questions)) {
+        test.questions.forEach(q => {
+          questionsFromTest.push({
+            ...q,
+            mainTopic: q.mainTopic || 'General',
+            subtopic: q.subtopic || 'General',
+            userId: req.user._id,
+            uniqueId: q.uniqueId || '',
+            bloomLevel: q.bloomLevel || 1,
+            content: q.content || '',
+            options: q.options || [],
+            correctAnswer: q.correctAnswer || '',
+            type: (q.type || 'MCQ').toUpperCase().trim(),
+            createdAt: test.createdAt,
+            updatedAt: test.updatedAt
+          });
+        });
+      }
+    });
+
+    // Normalize question types from Question model as well
+    const normalizedQuestionsFromQuestion = questionsFromQuestion.map(q => ({
+      ...q,
+      type: (q.type || 'MCQ').toUpperCase().trim()
+    }));
+
+    // Combine both question arrays
+    const allQuestions = [...normalizedQuestionsFromQuestion, ...questionsFromTest];
+
+    // Sort combined questions by createdAt descending
+    allQuestions.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    res.json(allQuestions);
   } catch (error) {
     console.error('Fetch questions error:', error);
     res.status(500).json({ error: 'Failed to fetch questions' });
@@ -74,6 +117,13 @@ router.post('/', async (req, res) => {
     const formattedQuestions = questions.map(q => {
       // Handle both direct question format and nested format
       const questionData = q.question ? q : q;
+
+      // Normalize type to uppercase and trim whitespace
+      let qType = (questionData.type || 'MCQ').toUpperCase().trim();
+
+      // Log the type for debugging
+      console.log('Question type before saving:', qType);
+
       return {
         content: questionData.question || questionData.content,
         options: (questionData.options || []).map(opt => 
@@ -81,7 +131,7 @@ router.post('/', async (req, res) => {
         ),
         correctAnswer: questionData.answer || questionData.correctAnswer,
         bloomLevel: questionData.bloomLevel || questionData.bloom_level || 1,
-        type: questionData.type || 'MCQ',
+        type: qType,
         mainTopic: questionData.mainTopic || 'General',
         subtopic: questionData.subtopic || 'General',
         userId: req.user._id,
@@ -129,17 +179,23 @@ router.post('/upload', upload.single('pdf'), async (req, res) => {
 
     if (!mlResponse.data.questions || !Array.isArray(mlResponse.data.questions)) {
       throw new Error('Invalid response from ML service');
-    }    const formattedQuestions = mlResponse.data.questions.map(q => ({
-      content: q.content || q.question,
-      options: q.type === 'MCQ' ? (Array.isArray(q.options) ? q.options : []) :
-              q.type === 'YES_NO' ? ['Yes', 'No'] : [],
-      correctAnswer: q.correctAnswer || q.answer,
-      bloomLevel: q.bloomLevel || q.bloom_level || 1,
-      type: q.type || (q.options ? 'MCQ' : q.answer === 'Yes' || q.answer === 'No' ? 'YES_NO' : 'DESCRIPTIVE'),
-      mainTopic: q.mainTopic || q.topic || 'General',
-      subtopic: q.subtopic || 'General',
-      uniqueId: uuidv4()
-    }));
+    }
+    const formattedQuestions = mlResponse.data.questions.map(q => {
+      // Normalize type to uppercase and trim whitespace
+      let qType = (q.type || (q.options ? 'MCQ' : q.answer === 'Yes' || q.answer === 'No' ? 'YES_NO' : 'DESCRIPTIVE')).toUpperCase().trim();
+
+      return {
+        content: q.content || q.question,
+        options: qType === 'MCQ' ? (Array.isArray(q.options) ? q.options : []) :
+                qType === 'YES_NO' ? ['Yes', 'No'] : [],
+        correctAnswer: q.correctAnswer || q.answer,
+        bloomLevel: q.bloomLevel || q.bloom_level || 1,
+        type: qType,
+        mainTopic: q.mainTopic || q.topic || 'General',
+        subtopic: q.subtopic || 'General',
+        uniqueId: uuidv4()
+      };
+    });
 
     let test = await Test.findOne({ userId: req.user._id, testName });
 

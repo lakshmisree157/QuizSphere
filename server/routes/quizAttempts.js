@@ -3,6 +3,7 @@ const router = express.Router();
 const mongoose = require('mongoose');
 const QuizAttempt = require('../models/quizAttempt');
 const Test = require('../models/test');
+const Question = require('../models/question');
 const auth = require('../middleware/auth');
 
 router.use(auth);
@@ -18,18 +19,28 @@ function extractOptionLetter(answer) {
 function isAnswerCorrect(userAnswer, correctAnswer, type) {
   if (!userAnswer) return false;
   
-  switch (type) {
-    case 'MCQ':
-      const userOption = userAnswer.match(/^[A-Z]/i)?.[0]?.toUpperCase();
-      return userOption === correctAnswer.toUpperCase();
-    case 'YES_NO':
-      return userAnswer.toLowerCase() === correctAnswer.toLowerCase();
-    case 'DESCRIPTIVE':
-      // For descriptive questions, we'll consider it correct if there's any answer
-      return userAnswer.trim().length > 0;
-    default:
-      return false;
-  }
+    switch (type) {
+      case 'MCQ':
+        // Compare full trimmed, case-insensitive strings for MCQ
+        return userAnswer.trim().toLowerCase() === correctAnswer.trim().toLowerCase();
+      case 'YES_NO':
+        return userAnswer.trim().toLowerCase() === correctAnswer.trim().toLowerCase();
+      case 'DESCRIPTIVE':
+        return userAnswer.trim().toLowerCase() === correctAnswer.trim().toLowerCase();
+        
+      case 'SHORT_ANSWER':
+        //proper logic for descriptive and short answer question evaluation with matching keywords
+        return userAnswer.trim().toLowerCase() === correctAnswer.trim().toLowerCase();
+      case 'FILL_IN_BLANK':
+        // Assuming fill-in-the-blank answers are compared as strings
+        return userAnswer.trim().toLowerCase() === correctAnswer.trim().toLowerCase();
+      case 'TRUE_FALSE':
+        // Compare full trimmed, case-insensitive strings for TRUE_FALSE
+        return userAnswer.trim().toLowerCase() === correctAnswer.trim().toLowerCase();
+      
+      default:
+        return false;
+    }
 }
 
 // Get quiz attempt by ID
@@ -133,7 +144,17 @@ router.get('/:quizId/questions', async (req, res) => {
       });
     }
 
-    // Return the questions from the attempt with all necessary data
+    // Fetch bloomLevel for each questionId
+    const questionIds = attempt.answers.map(a => a.questionId);
+    const questionsData = await Question.find({ uniqueId: { $in: questionIds } }).lean();
+
+    // Map bloomLevel by questionId for quick lookup
+    const bloomLevelMap = {};
+    questionsData.forEach(q => {
+      bloomLevelMap[q.uniqueId] = q.bloomLevel;
+    });
+
+    // Return the questions from the attempt with all necessary data including bloomLevel
     const questions = attempt.answers.map(a => ({
       uniqueId: a.questionId,
       content: a.question,
@@ -141,10 +162,11 @@ router.get('/:quizId/questions', async (req, res) => {
       type: a.type,
       options: a.type === 'MCQ' ? a.options : a.type === 'YES_NO' ? ['Yes', 'No'] : [],
       userAnswer: a.userAnswer,
-      isCorrect: a.isCorrect
+      isCorrect: a.isCorrect,
+      bloomLevel: bloomLevelMap[a.questionId] || null
     }));
 
-    console.log('Sending questions:', questions); // Debug log
+    console.log('Sending questions with bloomLevel:', questions); // Debug log
 
     res.json({
       success: true,
@@ -172,7 +194,22 @@ router.post('/', async (req, res) => {
   });
 
   try {
-    const { testId, answers, timeSpent } = req.body;
+    let { testId, answers, timeSpent } = req.body;
+
+    // Sanitize the type field in answers: trim and convert to uppercase to match enum values
+    if (answers && Array.isArray(answers)) {
+      answers = answers.map(answer => {
+        if (answer.type && typeof answer.type === 'string') {
+          answer.type = answer.type.trim().toUpperCase();
+        }
+        return answer;
+      });
+
+      // Debug log for sanitized answer types
+      answers.forEach((answer, index) => {
+        console.log(`Sanitized Answer ${index} type:`, answer.type);
+      });
+    }
     
     // Validate required fields
     if (!testId || !answers || !Array.isArray(answers) || answers.length === 0) {
@@ -204,13 +241,26 @@ router.post('/', async (req, res) => {
       questionCount: test.questions.length
     });
 
+    // Calculate correctness and score
+    let correctCount = 0;
+    const updatedAnswers = answers.map(answer => {
+      const isCorrect = isAnswerCorrect(answer.userAnswer, answer.correctAnswer, answer.type);
+      if (isCorrect) correctCount++;
+      return {
+        ...answer,
+        isCorrect
+      };
+    });
+
+    const score = (correctCount / answers.length) * 100;
+
     // Create and save attempt
     const attempt = new QuizAttempt({
       userId,
       testId,
-      answers,
+      answers: updatedAnswers,
       timeSpent,
-      score: 0, // Will be calculated
+      score,
       totalQuestions: answers.length
     });
 

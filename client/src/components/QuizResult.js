@@ -167,11 +167,19 @@ const QuizResult = () => {
     const stats = {
       MCQ: { total: 0, correct: 0 },
       YES_NO: { total: 0, correct: 0 },
-      DESCRIPTIVE: { total: 0, correct: 0 }
+      DESCRIPTIVE: { total: 0, correct: 0 },
+      TRUE_FALSE: { total: 0, correct: 0 },
+      FILL_IN_BLANK: { total: 0, correct: 0 },
+      SHORT_ANSWER: { total: 0, correct: 0 }
+      // Add more types as needed
+
     };
 
     attempt.answers.forEach(answer => {
-      const type = answer.type || 'MCQ';
+      const type = (answer.type || 'MCQ').toUpperCase().trim();
+      if (!stats[type]) {
+        stats[type] = { total: 0, correct: 0 };
+      }
       stats[type].total++;
       if (answer.isCorrect) {
         stats[type].correct++;

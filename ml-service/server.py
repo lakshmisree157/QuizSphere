@@ -1,8 +1,19 @@
-# server.py
+# server.py - Clean version using BloomPredictor
 from fastapi import FastAPI, Request, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, validator
 import logging
+import json
+import requests
+import fitz
+import base64
+from collections import defaultdict
+from nltk.tokenize import sent_tokenize
+from dotenv import load_dotenv
+import os
+
+# Import your BloomPredictor
+from bloom_predictor import predict_bloom_level_for_paragraph
 
 # Configure logging
 logging.basicConfig(
@@ -14,28 +25,9 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
-import spacy
-from sentence_transformers import SentenceTransformer
-from collections import defaultdict
-import numpy as np
-from nltk.tokenize import sent_tokenize
-from sklearn.cluster import KMeans
-import json
-import requests
-import fitz
-from nltk.corpus import wordnet as wn
-from sumy.parsers.plaintext import PlaintextParser
-from sumy.nlp.tokenizers import Tokenizer
-from sumy.summarizers.lsa import LsaSummarizer
-from dotenv import load_dotenv
-import os
-import base64
-from concurrent.futures import ThreadPoolExecutor
 
-# Load environment variables at the start
+# Load environment variables
 load_dotenv()
-
-# Get environment settings
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 CLIENT_URL = os.getenv("CLIENT_URL", "http://localhost:3000")
 
@@ -55,53 +47,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Load models
-try:
-    nlp = spacy.load("en_core_web_sm")
-except OSError:
-    import spacy.cli
-    nlp = spacy.load("en_core_web_sm")
-
-model = SentenceTransformer('all-MiniLM-L6-v2')
-
-
-contrast_words = ["however", "whereas", "although", "but", "yet", "in contrast"]
-argumentative_patterns = ["should", "must", "it is important", "in my opinion"]
-
-bloom_verb_lists = {
-    1: ["define", "list", "recall", "identify", "name"],
-    2: ["explain", "summarize", "describe", "classify"],
-    3: ["apply", "demonstrate", "use"],
-    4: ["analyze", "compare", "contrast"],
-    5: ["evaluate", "assess", "justify"],
-    6: ["create", "design", "formulate"]
-}
-bloom_levels = list(bloom_verb_lists.keys())
-expanded_verb_to_bloom = defaultdict(set)
-
-expanded_argument_verbs = set()
-for verb in ["recommend", "suggest", "propose", "argue", "advocate", "assert"]:
-    expanded_argument_verbs.update({lemma.name().replace("_", " ").lower() for syn in wn.synsets(verb, pos=wn.VERB) for lemma in syn.lemmas()})
-    expanded_argument_verbs.add(verb)
-
-def expand_bloom_verbs(bloom_verb_lists):
-    for level, verbs in bloom_verb_lists.items():
-        for verb in verbs:
-            lemma = nlp(verb.lower())[0].lemma_
-            expanded_verb_to_bloom[lemma].add(level)
-            expanded_verb_to_bloom[verb.lower()].add(level)
-            for syn in wn.synsets(verb.lower(), pos=wn.VERB):
-                for l in syn.lemmas():
-                    syn_verb = l.name().replace("_", " ").lower()
-                    syn_lemma = nlp(syn_verb)[0].lemma_
-                    expanded_verb_to_bloom[syn_lemma].add(level)
-                    expanded_verb_to_bloom[syn_verb].add(level)
-
-                    
-expand_bloom_verbs(bloom_verb_lists)
+# Models
 class PDFContent(BaseModel):
     content: str
-    # selectedTopic: str | None = None
     selectedSubtopic: str | None = None
 
     @validator('content')
@@ -112,8 +60,71 @@ class PDFContent(BaseModel):
         except Exception:
             raise ValueError('Invalid base64 encoded content')
 
+# Bloom's Taxonomy Configuration for Question Generation
+BLOOM_TAXONOMY = {
+    1: {
+        "name": "Remember",
+        "description": "Recall facts, basic concepts, and answers",
+        "question_instruction": """
+Generate questions that test recall of facts, terminology, or basic concepts.
+Focus on: definitions, facts, lists, basic identification.
+Question types: Multiple Choice, True/False, Fill in the Blanks.
+Use verbs like: define, identify, list, name, recall, recognize, state.
+"""
+    },
+    2: {
+        "name": "Understand", 
+        "description": "Explain ideas or concepts",
+        "question_instruction": """
+Generate questions that test comprehension and interpretation.
+Focus on: explanations, descriptions, summaries, comparisons.
+Question types: Multiple Choice, Short Answer,Fill in the Blanks.
+Use verbs like: describe, explain, interpret, summarize, classify, compare.
+"""
+    },
+    3: {
+        "name": "Apply",
+        "description": "Use information in new situations",
+        "question_instruction": """
+Generate questions that require applying knowledge to new situations.
+Focus on: problem-solving, demonstrations, implementations.
+Question types: Scenario-based MCQ, Problem-solving questions.
+Use verbs like: apply, demonstrate, illustrate, solve, use, implement.
+"""
+    },
+    4: {
+        "name": "Analyze",
+        "description": "Draw connections among ideas",
+        "question_instruction": """
+Generate questions that examine relationships and break down information.
+Focus on: comparisons, relationships, patterns, structure analysis.
+Question types: MCQ with reasoning, Analysis questions.
+Use verbs like: analyze, differentiate, organize, relate, compare, contrast.
+"""
+    },
+    5: {
+        "name": "Evaluate",
+        "description": "Justify a stand or decision",
+        "question_instruction": """
+Generate questions that require making judgments based on criteria.
+Focus on: critiques, evaluations, justifications, arguments.
+Question types: Long Answer, Evaluative MCQ.
+Use verbs like: assess, critique, evaluate, judge, justify, defend.
+"""
+    },
+    6: {
+        "name": "Create",
+        "description": "Produce new or original work",
+        "question_instruction": """
+Generate questions that involve creating new ideas or solutions.
+Focus on: designing, developing, constructing, formulating new approaches.
+Question types: Project-based, Creative tasks, Synthesis questions.
+Use verbs like: create, design, develop, formulate, construct, produce.
+"""
+    }
+}
 
-def extract_structured_by_font(pdf_bytes):
+def extract_pdf_content(pdf_bytes):
     """Extract structured content from PDF bytes."""
     try:
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
@@ -137,6 +148,7 @@ def extract_structured_by_font(pdf_bytes):
                             current_sub = text
                         elif current_main and current_sub:  # Content
                             structured[current_main][current_sub] += " " + text
+        
         return structured
     except Exception as e:
         raise ValueError(f"Failed to process PDF: {str(e)}")
@@ -144,262 +156,105 @@ def extract_structured_by_font(pdf_bytes):
         if 'doc' in locals():
             doc.close()
 
-def summarize_with_sumy(sentences, ratio=0.3):
-    from nltk.corpus import stopwords
-    text = " ".join(sentences)
-    parser = PlaintextParser.from_string(text, Tokenizer("english"))
-    summarizer = LsaSummarizer()
-    summarizer.stop_words = set(stopwords.words("english"))
-    n = max(1, int(len(sentences) * ratio))
-    summary = summarizer(parser.document, n)
-    return " ".join(str(sentence) for sentence in summary)
-
-def estimate_k(num_sentences):
-    if num_sentences <= 5:
-        return 1
-    elif num_sentences <= 10:
-        return 2
-    elif num_sentences <= 20:
-        return 3
-    else:
-        return 4
-
-def preprocess_paragraph(paragraph_text):
-    if not paragraph_text or paragraph_text.isspace():
-        return ""
-    sentences = sent_tokenize(paragraph_text)
-    if not sentences:
-        return ""
-
-    embeddings = model.encode(sentences)
-    k = estimate_k(len(sentences))
-    kmeans = KMeans(n_clusters=k, random_state=42)
-    labels = kmeans.fit_predict(embeddings)
-
-    clusters = defaultdict(list)
-    for label, sentence in zip(labels, sentences):
-        clusters[label].append(sentence)
-
-    final_sentences = []
-    for cluster_id, sents in clusters.items():
-        if len(sents) > 3:
-            summarized = summarize_with_sumy(sents, ratio=0.3)
-            final_sentences.append(summarized)
-        else:
-            final_sentences.extend(sents)
-
-    return " ".join(final_sentences)
-
-def extract_linguistic_counts(paragraph):
-    doc = nlp(paragraph)
-    clause_count = 0
-    total_words = 0
-    contrast_count = 0
-    argument_count = 0
-
-    for sent in doc.sents:
-        total_words += len(sent)
-        clause_count += len([t for t in sent if t.dep_ in ["ccomp", "xcomp", "advcl", "acl", "relcl"]]) + 1
-
-        for token in sent:
-            lemma = token.lemma_.lower()
-            if lemma in expanded_argument_verbs:   # <--- corrected matching
-                argument_count += 1
-
-        if any(word in sent.text.lower() for word in contrast_words):
-            contrast_count += 1
-        if any(phrase in sent.text.lower() for phrase in argumentative_patterns):
-            argument_count += 1
-
-    return clause_count, total_words, contrast_count, argument_count
-
-def get_bloom_levels(paragraph):
-    doc = nlp(paragraph)
-    level_counts = {level: 0 for level in bloom_levels}
-
-    for token in doc:
-        if token.pos_ == "VERB":
-            lemma = token.lemma_.lower()
-            if lemma in expanded_verb_to_bloom:
-                for level in expanded_verb_to_bloom[lemma]:
-                    level_counts[level] += 1
-
-    return level_counts
-
-def extract_feature_vector(paragraph):
-    doc = nlp(paragraph)
-    clause_count, word_count, contrast_count, argument_count = extract_linguistic_counts(paragraph)
-
-    sentence_count = len(list(doc.sents))
-    avg_sentence_length = word_count / max(1, sentence_count)
-    bloom_counts = get_bloom_levels(paragraph)
-    bloom_features = [bloom_counts.get(level, 0) / max(1, word_count) for level in bloom_levels]
-    contrast_density = sum(1 for token in doc if token.text.lower() in contrast_words) / max(1, sentence_count)
-    argument_markers = sum(1 for pattern in argumentative_patterns if pattern in paragraph.lower()) / max(1, sentence_count)
-
-    return np.array([
-        clause_count,
-        word_count,
-        sentence_count,
-        avg_sentence_length,
-        contrast_count,
-        argument_count,
-        contrast_density,
-        argument_markers
-    ] + bloom_features)
-
-def determine_bloom_level(feature_vector):
-    bloom_indices = feature_vector[8:]  # bloom features start after index 8
-    max_index = np.argmax(bloom_indices)
-    return max_index + 1  # Map to Bloom level 1-6
-
-def basic_bt_mapping(text):
-    feature_vector = extract_feature_vector(text)
-    bloom_level = determine_bloom_level(feature_vector)
-    return bloom_level
-
-def extract_linguistic_features(text):
-    """Extract linguistic features for Bloom's taxonomy classification."""
-    feature_vector = extract_feature_vector(text)
-    return {
-        'clause_count': feature_vector[0],
-        'word_count': feature_vector[1],
-        'sentence_count': feature_vector[2],
-        'avg_sentence_length': feature_vector[3],
-        'contrast_count': feature_vector[4],
-        'argument_count': feature_vector[5],
-        'contrast_density': feature_vector[6],
-        'argument_markers': feature_vector[7],
-        'bloom_features': feature_vector[8:].tolist()
-    }
-
-def generate_questions_groq(content, bloom_level):
-    logger.info(f"Generating questions for bloom level {bloom_level}")
+def generate_questions_with_groq(content, bloom_level, max_questions=5):
+    """Generate questions using GROQ API based on Bloom's level."""
     
-    # Limit content length to avoid payload size issues
-    max_content_length = 4000
-    if len(content) > max_content_length:
-        content = content[:max_content_length]
-        logger.info(f"Content truncated to {max_content_length} characters")
+    bloom_config = BLOOM_TAXONOMY.get(bloom_level, BLOOM_TAXONOMY[2])
+    
+    prompt = f"""
+Generate {max_questions} educational questions based on the following content.
+
+Content: {content[:2500]}
+
+Bloom's Taxonomy Level: {bloom_level} ({bloom_config['name']})
+{bloom_config['question_instruction']}
+
+Return ONLY a valid JSON array with this exact format:
+[
+  {{
+    "type": "MCQ",
+    "question": "Your question here?",
+    "options": ["Option A", "Option B", "Option C", "Option D"],
+    "answer": "Option A"
+  }},
+  {{
+    "type": "TRUE_FALSE",
+    "question": "Statement to evaluate?",
+    "answer": "True"
+  }},
+  {{
+    "type": "SHORT_ANSWER",
+    "question": "Question requiring explanation?",
+    "answer": "Expected answer or key points"
+  }}
+  {{
+    "type": "DESCRIPTIVE",
+    "question": "In-depth question requiring detailed response?",
+    "answer": "Detailed explanation or analysis"
+  }},
+  {{
+    "type": "YES_NO",
+    "question": "Yes/No question?",
+    "answer": "Yes"
+  }}
+]
+
+Important: 
+- Generate questions appropriate for Bloom's level {bloom_level}
+- Ensure answers are accurate based on the content
+- Use varied question types suitable for this cognitive level
+"""
 
     headers = {
         "Authorization": f"Bearer {GROQ_API_KEY}",
         "Content-Type": "application/json"
     }
 
-    prompt = {
-        "model": "llama3-8b-8192",
-        "messages": [{
-            "role": "user",
-            "content": f"""Generate questions based on this content and Bloom's level {bloom_level}.
-            
-Content: {content}
-
-Instructions: Generate 3 questions focusing on Bloom's level {bloom_level}. Include a mix of:
-1. Multiple choice questions (MCQ)
-2. Yes/No questions
-3. Descriptive questions
-
-Format the response as a JSON array ONLY with no additional text.
-Example:
-[
-  {{
-    "type": "MCQ",
-    "question": "What is X?",
-    "options": ["A) First", "B) Second", "C) Third", "D) Fourth"],
-    "answer": "A"
-  }},
-  {{
-    "type": "YES_NO",
-    "question": "Is X true?",
-    "answer": "Yes"
-  }},
-  {{
-    "type": "DESCRIPTIVE",
-    "question": "Explain the concept of X.",
-    "answer": "A detailed explanation of X..."
-  }}
-]"""
-        }],
+    payload = {
+        "model": "llama-3.3-70b-versatile",
+        "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.7,
-        "max_tokens": 1000
+        "max_tokens": 1200
     }
 
     try:
-        logger.info("Sending request to GROQ API...")
-        response = requests.post(GROQ_API_URL, headers=headers, json=prompt, timeout=30)
-        logger.info(f"GROQ API Status Code: {response.status_code}")
-        logger.info(f"GROQ API Response: {response.text[:500]}...")  # Log first 500 chars
-        
+        logger.info(f"Generating questions for Bloom level {bloom_level}")
+        response = requests.post(GROQ_API_URL, headers=headers, json=payload, timeout=30)
         response.raise_for_status()
         result = response.json()
         
         questions_text = result['choices'][0]['message']['content'].strip()
-        logger.info(f"Raw questions text: {questions_text[:500]}...")  # Log first 500 chars
+        logger.info(f"Raw response: {questions_text[:200]}...")
         
-        try:
-            questions = json.loads(questions_text)
-            logger.info("Successfully parsed response as JSON")
-        except json.JSONDecodeError:
-            logger.info("Failed to parse response directly, trying to extract JSON array...")
-            json_start = questions_text.find('[')
-            json_end = questions_text.rfind(']') + 1
-            
-            if json_start == -1 or json_end == 0:
-                logger.error(f"No JSON array found in response: {questions_text}")
-                raise ValueError("No valid JSON found in response")
-            
+        # Extract JSON from response
+        json_start = questions_text.find('[')
+        json_end = questions_text.rfind(']') + 1
+        
+        if json_start != -1 and json_end > json_start:
             questions_json = questions_text[json_start:json_end]
-            logger.info(f"Extracted JSON: {questions_json}")
             questions = json.loads(questions_json)
-            logger.info("Successfully parsed extracted JSON")
-
-        # Validate response format and normalize question types
-        normalized_questions = []
-        for q in questions:
-            if not isinstance(q, dict) or 'type' not in q or 'question' not in q or 'answer' not in q:
-                continue
-                
-            # Normalize question type
-            q_type = q['type'].upper()
-            if q_type not in ['MCQ', 'YES_NO', 'DESCRIPTIVE']:
-                continue
-                
-            # For MCQ questions, ensure options exist
-            if q_type == 'MCQ':
-                if 'options' not in q or not isinstance(q['options'], list) or len(q['options']) < 2:
-                    continue
-                # Clean up options
-                q['options'] = [opt.replace("A) ", "").replace("B) ", "")
-                              .replace("C) ", "").replace("D) ", "") 
-                              for opt in q['options']]
             
-            # For YES_NO questions, normalize answer
-            elif q_type == 'YES_NO':
-                q['answer'] = 'Yes' if q['answer'].lower() in ['yes', 'true', 'y'] else 'No'
-                q['options'] = ['Yes', 'No']
+            # Validate and normalize questions
+            valid_questions = []
+            for q in questions:
+                if isinstance(q, dict) and 'question' in q and 'answer' in q and 'type' in q:
+                    q_type = q['type'].upper()
+                    if q_type in ['MCQ', 'TRUE_FALSE', 'SHORT_ANSWER', 'DESCRIPTIVE', 'YES_NO']:
+                        if q_type == 'YES_NO':
+                            q['type'] = 'TRUE_FALSE'
+                            q['answer'] = 'True' if q['answer'].lower() in ['yes', 'y', 'true'] else 'False'
+                        valid_questions.append(q)
             
-            normalized_questions.append(q)
-
-        if not normalized_questions:
-            raise ValueError("No valid questions generated")
-
-        logger.info(f"Generated {len(normalized_questions)} questions")
-        return normalized_questions
-
+            logger.info(f"Generated {len(valid_questions)} valid questions")
+            return valid_questions
+        else:
+            raise ValueError("No valid JSON array found in response")
+            
     except Exception as e:
-        logger.error(f"Error in generate_questions_groq: {str(e)}")
+        logger.error(f"Error generating questions: {str(e)}")
         raise
 
-# Function to process chunks in parallel
-def process_chunk(chunk, bloom_level):
-    try:
-        return generate_questions_groq(chunk, bloom_level)
-    except Exception as e:
-        logger.error(f"Error processing chunk: {str(e)}")
-        return []
-
-def chunk_content(content, max_length=3000):
+def chunk_content(content, max_length=2000):
     """Split content into manageable chunks."""
     sentences = sent_tokenize(content)
     chunks = []
@@ -407,11 +262,10 @@ def chunk_content(content, max_length=3000):
     current_length = 0
 
     for sentence in sentences:
-        if current_length + len(sentence) > max_length:
-            if current_chunk:
-                chunks.append(" ".join(current_chunk))
-                current_chunk = []
-                current_length = 0
+        if current_length + len(sentence) > max_length and current_chunk:
+            chunks.append(" ".join(current_chunk))
+            current_chunk = []
+            current_length = 0
         current_chunk.append(sentence)
         current_length += len(sentence)
 
@@ -421,7 +275,8 @@ def chunk_content(content, max_length=3000):
     return chunks
 
 def convert_numpy_types(data):
-    """Recursively convert numpy types to native Python types."""
+    """Convert numpy types to native Python types."""
+    import numpy as np
     if isinstance(data, np.integer):
         return int(data)
     elif isinstance(data, np.floating):
@@ -434,69 +289,68 @@ def convert_numpy_types(data):
         return [convert_numpy_types(item) for item in data]
     return data
 
+# API Endpoints
 @app.post("/api/questions/generate")
 async def generate_questions(data: PDFContent):
     logger.info("Starting question generation from PDF content")
     try:
         pdf_content = base64.b64decode(data.content)
-        structured_data = extract_structured_by_font(pdf_content)
+        structured_data = extract_pdf_content(pdf_content)
 
         if not structured_data:
-            raise HTTPException(status_code=400, detail="No structured data extracted from PDF")
+            raise HTTPException(status_code=400, detail="No content extracted from PDF")
 
         all_questions = []
         topic_breakdown = {}
 
         for main_topic, subtopics in structured_data.items():
+            logger.info(f"Processing main topic: {main_topic}")
             topic_questions = []
 
             for subtopic, content in subtopics.items():
                 if len(content.strip()) < 100:
+                    logger.warning(f"Skipping short content in {main_topic}/{subtopic}")
                     continue
 
-                processed_content = preprocess_paragraph(content)
-                if not processed_content:
-                    continue
-
-                bloom_level = basic_bt_mapping(processed_content)
-                chunks = chunk_content(processed_content)
+                logger.info(f"Processing subtopic: {subtopic}")
+                
+                # Use your BloomPredictor to determine the level
+                try:
+                    bloom_level = predict_bloom_level_for_paragraph(content)
+                    logger.info(f"Predicted Bloom level {bloom_level} for {subtopic}")
+                except Exception as e:
+                    logger.error(f"Error predicting Bloom level: {e}, using default level 2")
+                    bloom_level = 2
+                
+                # Chunk content if too long
+                chunks = chunk_content(content)
 
                 for chunk in chunks:
                     try:
-                        questions = generate_questions_groq(chunk, bloom_level)
+                        questions = generate_questions_with_groq(chunk, bloom_level)
+                        
                         for q in questions:
                             formatted_question = {
                                 "content": q["question"],
                                 "type": q["type"],
                                 "bloomLevel": bloom_level,
+                                "bloomName": BLOOM_TAXONOMY[bloom_level]["name"],
                                 "mainTopic": main_topic,
-                                "subtopic": subtopic
+                                "subtopic": subtopic,
+                                "options": q.get("options", []),
+                                "correctAnswer": q["answer"]
                             }
                             
-                            # Add type-specific fields
-                            if q["type"] == "MCQ":
-                                formatted_question.update({
-                                    "options": q["options"],
-                                    "correctAnswer": q["answer"]
-                                })
-                            elif q["type"] == "YES_NO":
-                                formatted_question.update({
-                                    "options": ["Yes", "No"],
-                                    "correctAnswer": q["answer"]
-                                })
-                            else:  # DESCRIPTIVE
-                                formatted_question.update({
-                                    "options": [],
-                                    "correctAnswer": q["answer"]
-                                })
-                            
                             topic_questions.append(formatted_question)
-                            logger.info(f"Added question: {formatted_question['content'][:50]}...")
+                            logger.info(f"Added {q['type']} question for level {bloom_level}")
+                            
                     except Exception as e:
                         logger.error(f"Error processing chunk: {str(e)}")
+                        continue
 
             all_questions.extend(topic_questions)
             topic_breakdown[main_topic] = len(topic_questions)
+            logger.info(f"Generated {len(topic_questions)} questions for {main_topic}")
 
         if not all_questions:
             raise HTTPException(status_code=500, detail="No questions generated")
@@ -507,7 +361,6 @@ async def generate_questions(data: PDFContent):
             "topicBreakdown": topic_breakdown
         }
 
-        # Convert numpy types to native Python types
         return convert_numpy_types(response_data)
 
     except Exception as e:
@@ -516,146 +369,113 @@ async def generate_questions(data: PDFContent):
 
 @app.post("/api/pdf/upload")
 async def upload_pdf(file: UploadFile):
-    logger.info(f"Received PDF upload request: {file.filename}")
-    try:
-        if not file.filename.lower().endswith('.pdf'):
-            raise HTTPException(
-                status_code=400,
-                detail="File must be a PDF"
-            )
-            
-        content = await file.read()
-        if not content:
-            raise HTTPException(
-                status_code=400,
-                detail="Empty file received"
-            )
+    logger.info(f"Received PDF upload: {file.filename}")
+    
+    if not file.filename.lower().endswith('.pdf'):
+        raise HTTPException(status_code=400, detail="File must be a PDF")
+        
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty file received")
 
-        logger.info("Extracting structured content from PDF")
-        structured_data = extract_structured_by_font(content)
+    try:
+        structured_data = extract_pdf_content(content)
         
         if not structured_data:
-            logger.error("No structured data extracted from PDF")
-            raise HTTPException(
-                status_code=400,
-                detail="Could not extract content from PDF"
-            )
+            raise HTTPException(status_code=400, detail="Could not extract content from PDF")
 
         all_questions = []
         topic_breakdown = {}
         
-        # Process each main topic and its subtopics
         for main_topic, subtopics in structured_data.items():
             logger.info(f"Processing main topic: {main_topic}")
             topic_questions = []            
-            for subtopic, content in subtopics.items():
-                logger.info(f"Processing subtopic: {subtopic}")
-                if len(content.strip()) < 100:
-                    logger.warning(f"Skipping short content in {main_topic}/{subtopic}")
+            
+            for subtopic, content_text in subtopics.items():
+                if len(content_text.strip()) < 100:
                     continue
                 
-                # Preprocess this section's content
-                processed_content = preprocess_paragraph(content)
-                if not processed_content:
-                    logger.warning(f"No content after preprocessing in {main_topic}/{subtopic}")
-                    continue
-                
-                # Get Bloom's level for this section
-                section_bloom_level = basic_bt_mapping(processed_content)
-                logger.info(f"Determined Bloom's level {section_bloom_level} for {main_topic}/{subtopic}")
+                # Use your BloomPredictor
+                try:
+                    bloom_level = predict_bloom_level_for_paragraph(content_text)
+                    logger.info(f"Predicted Bloom level {bloom_level} for {subtopic}")
+                except Exception as e:
+                    logger.error(f"Error predicting Bloom level: {e}")
+                    bloom_level = 2
                 
                 try:
-                    # Generate questions for this section
-                    logger.info(f"Generating questions for {main_topic}/{subtopic}")
-                    section_questions = generate_questions_groq(processed_content, section_bloom_level)
-                    logger.info(f"Generated {len(section_questions)} questions")
+                    questions = generate_questions_with_groq(content_text, bloom_level)
                     
-                    # Format and add metadata
-                    for q in section_questions:
+                    for q in questions:
                         formatted_question = {
                             "content": q["question"],
                             "type": q["type"],
-                            "bloomLevel": section_bloom_level,
+                            "bloomLevel": bloom_level,
+                            "bloomName": BLOOM_TAXONOMY[bloom_level]["name"],
                             "mainTopic": main_topic,
-                            "subtopic": subtopic
+                            "subtopic": subtopic,
+                            "options": q.get("options", []),
+                            "correctAnswer": q["answer"]
                         }
                         
-                        # Add type-specific fields
-                        if q["type"] == "MCQ":
-                            formatted_question.update({
-                                "options": q["options"],
-                                "correctAnswer": q["answer"]
-                            })
-                        elif q["type"] == "YES_NO":
-                            formatted_question.update({
-                                "options": ["Yes", "No"],
-                                "correctAnswer": q["answer"]
-                            })
-                        else:  # DESCRIPTIVE
-                            formatted_question.update({
-                                "options": [],
-                                "correctAnswer": q["answer"]
-                            })
-                        
                         topic_questions.append(formatted_question)
-                        logger.info(f"Added question: {formatted_question['content'][:50]}...")
+                        
                 except Exception as e:
                     logger.error(f"Failed to process section {main_topic}/{subtopic}: {str(e)}")
                     continue
             
-            # Add questions from this topic
             all_questions.extend(topic_questions)
             topic_breakdown[main_topic] = len(topic_questions)
-            logger.info(f"Added {len(topic_questions)} questions for topic {main_topic}")
 
         if not all_questions:
-            logger.error("No questions were generated")
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to generate any valid questions"
-            )
+            raise HTTPException(status_code=500, detail="Failed to generate any questions")
 
         response_data = {
             "questions": all_questions,
-            "totalQuestions": len(all_questions)
+            "totalQuestions": len(all_questions),
+            "topicBreakdown": topic_breakdown
         }
 
-        # Convert numpy types to native Python types
         return convert_numpy_types(response_data)
 
     except Exception as e:
         logger.error(f"Error processing PDF: {str(e)}")
-        raise HTTPException(
-            status_code=500, 
-            detail=f"Error processing PDF: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error processing PDF: {str(e)}")
 
 @app.get("/health")
 async def health_check():
-    return {"status": "ok"}
+    return {
+        "status": "ok", 
+        "bloom_levels": list(BLOOM_TAXONOMY.keys()),
+        "model_loaded": True
+    }
 
 @app.on_event("startup")
 async def startup_event():
-    # Validate required environment variables
-    if not GROQ_API_KEY:
-        raise ValueError("GROQ_API_KEY environment variable is not set")
-    
-
+    # Test GROQ API connection
     try:
         response = requests.post(
             GROQ_API_URL,
             headers={"Authorization": f"Bearer {GROQ_API_KEY}"},
             json={
-                "model": "llama3-8b-8192",
+                "model": "llama-3.3-70b-versatile",
                 "messages": [{"role": "user", "content": "Test"}],
                 "max_tokens": 1
-            }
+            },
+            timeout=10
         )
         response.raise_for_status()
+        logger.info("GROQ API connection successful")
     except Exception as e:
-        print(f"Warning: GROQ API test failed: {e}")
+        logger.warning(f"GROQ API test failed: {e}")
 
-# Add explicit host binding
+    # Test BloomPredictor
+    try:
+        test_result = predict_bloom_level_for_paragraph("Define artificial intelligence.")
+        logger.info(f"BloomPredictor test successful, result: {test_result}")
+    except Exception as e:
+        logger.error(f"BloomPredictor test failed: {e}")
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="127.0.0.1", port=8000)
