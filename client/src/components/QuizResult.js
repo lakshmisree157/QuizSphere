@@ -115,10 +115,8 @@ const QuizResult = () => {
 
         setAttempt(response.data.attempt);
 
-        // Fetch feedback for descriptive and short answer questions
-        const answersToFetch = response.data.attempt.answers.filter(a =>
-          ['DESCRIPTIVE', 'SHORT_ANSWER'].includes((a.type || '').toUpperCase())
-        );
+        // Fetch feedback for all questions
+        const answersToFetch = response.data.attempt.answers;
 
         for (const answer of answersToFetch) {
           setLoadingFeedbacks(prev => ({ ...prev, [answer.questionId]: true }));
@@ -250,7 +248,7 @@ const QuizResult = () => {
                 <CardContent>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
                     <Chip label={type} size="small" color="secondary" />
-                    <Typography variant="h6">
+                    <Typography variant="h6" color="text.primary">
                       {Math.round((stat.correct / stat.total) * 100)}%
                     </Typography>
                   </Box>
@@ -263,12 +261,19 @@ const QuizResult = () => {
           )
         ))}
         <Grid item xs={12}>
-          <Card variant="outlined" sx={{ bgcolor: 'primary.light' }}>
+          <Card 
+            variant="outlined" 
+            sx={{ 
+              bgcolor: 'primary.main',
+              border: '1px solid',
+              borderColor: 'primary.main'
+            }}
+          >
             <CardContent>
-              <Typography variant="h6" color="primary.contrastText">
+              <Typography variant="h6" sx={{ color: 'white', fontWeight: 'bold' }}>
                 Overall Score: {Math.round((totalCorrect / totalQuestions) * 100)}%
               </Typography>
-              <Typography variant="body2" color="primary.contrastText">
+              <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.9)' }}>
                 {totalCorrect} correct out of {totalQuestions} questions
               </Typography>
             </CardContent>
@@ -308,11 +313,9 @@ const QuizResult = () => {
           </Typography>
         )}
         
-        {questionType === 'DESCRIPTIVE' && (
+        {(questionType === 'DESCRIPTIVE' || questionType === 'MCQ' || questionType === 'YES_NO' || questionType === 'TRUE_FALSE' || questionType === 'FILL_IN_BLANK' || questionType === 'SHORT_ANSWER') && (
           <>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 1, fontStyle: 'italic' }}>
-              Note: Descriptive answers are evaluated based on key concepts and understanding.
-            </Typography>
+            
             {loadingFeedbacks[answer.questionId] ? (
               <Box sx={{ display: 'flex', alignItems: 'center', mt: 1 }}>
                 <CircularProgress size={16} />
