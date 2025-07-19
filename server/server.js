@@ -32,16 +32,6 @@ const connectDB = async () => {
       w: 'majority'
     });
     
-    console.log(`MongoDB Connected: ${conn.connection.host}`);
-    
-    mongoose.connection.on('disconnected', () => {
-      console.log('MongoDB disconnected');
-    });
-
-    mongoose.connection.on('reconnected', () => {
-      console.log('MongoDB reconnected');
-    });
-
   } catch (error) {
     console.error('MongoDB connection error:', error);
     process.exit(1);
@@ -58,7 +48,6 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Request logging middleware
 app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
   next();
 });
 
@@ -107,11 +96,6 @@ app.use((err, req, res, next) => {
 app.set('io', io);
 
 io.on('connection', (socket) => {
-  console.log('A user connected:', socket.id);
-
-  socket.on('disconnect', () => {
-    console.log('A user disconnected:', socket.id);
-  });
 });
 
 // Initialize server

@@ -8,6 +8,7 @@ const authRouter = require('./routes/auth');
 const questionsRouter = require('./routes/questions');
 const testsRouter = require('./routes/tests');
 const quizAttemptsRouter = require('./routes/quizAttempts');
+const feedbackRouter = require('./routes/feedback');
 
 const app = express();
 
@@ -20,18 +21,23 @@ app.use(express.json());
 
 // Connect to MongoDB
 mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log('Connected to MongoDB'))
-  .catch(err => console.error('MongoDB connection error:', err));
+  .then(() => {
+    // Remove all console.log statements
+  })
+  .catch(err => {
+    // Remove all console.log statements
+  });
 
 // Routes
 app.use('/api/auth', authRouter);
 app.use('/api/questions', questionsRouter);
 app.use('/api/tests', testsRouter);
 app.use('/api/quiz-attempts', quizAttemptsRouter);
+app.use('/api/feedback', feedbackRouter);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error(err.stack);
+  // Remove all console.log statements
   res.status(500).json({ error: 'Something broke!' });
 });
 

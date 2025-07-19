@@ -389,42 +389,7 @@ const Home = () => {
         </div>
       </section>
 
-      {/* Demo Section */}
-      <section id="demo" className="py-20 bg-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-16 animate-on-scroll">
-            <h2 className="text-4xl font-bold text-gray-900 mb-4">See It In Action</h2>
-            <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-              Experience the power of Readyo-Meter with our interactive demo. Upload a sample PDF and see how our AI generates quizzes in real-time.
-            </p>
-          </div>
-          
-          <div className="bg-gradient-to-br from-blue-50 to-purple-50 rounded-3xl p-8 lg:p-12 animate-on-scroll">
-            <div className="text-center">
-              <div className="inline-flex items-center space-x-4 bg-white rounded-2xl p-6 shadow-lg mb-8">
-                <div className="text-4xl">🚀</div>
-                <div>
-                  <h3 className="text-2xl font-bold text-gray-900 mb-2">Interactive Demo Coming Soon</h3>
-                  <p className="text-gray-600">Try our AI-powered PDF to quiz conversion with real-time processing</p>
-                </div>
-              </div>
-              
-              <div className="grid md:grid-cols-3 gap-6 max-w-4xl mx-auto">
-                {[
-                  { title: "Sample PDF Upload", icon: "📄" },
-                  { title: "AI Question Generation", icon: "🧠" },
-                  { title: "Interactive Quiz", icon: "🎯" }
-                ].map((demo, index) => (
-                  <div key={index} className="bg-white p-6 rounded-xl shadow-md hover:shadow-lg transition-shadow duration-300">
-                    <div className="text-3xl mb-3">{demo.icon}</div>
-                    <h4 className="font-semibold text-gray-900">{demo.title}</h4>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
+      
 
       {/* Tech Section */}
       <section id="tech" className="py-20 bg-gray-900">

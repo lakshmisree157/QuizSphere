@@ -22,6 +22,7 @@ const Quiz = () => {
   const [startTime] = useState(Date.now());
   const [timeLeft, setTimeLeft] = useState(5 * 60); // 5 minutes in seconds
   const [timerExpired, setTimerExpired] = useState(false);
+  const [submitting, setSubmitting] = useState(false); // <-- Add submitting state
 
   useEffect(() => {
     const fetchQuestions = async () => {
@@ -41,8 +42,6 @@ const Quiz = () => {
             }
           );
 
-          console.log('Attempt questions response:', response.data); // Debug log
-
           if (!response.data?.success || !response.data?.questions) {
             throw new Error('No questions available in attempt');
           }
@@ -54,7 +53,6 @@ const Quiz = () => {
           }));
 
           setQuestions(questionsWithOptions);
-          console.log('Processed questions:', questionsWithOptions); // Debug log
 
           // Pre-fill selected answers from attempt
           const preSelected = {};
@@ -73,8 +71,6 @@ const Quiz = () => {
             }
           );
 
-          console.log('Test questions response:', response.data); // Debug log
-
           if (!response.data?.success || !response.data?.questions) {
             throw new Error('No questions available');
           }
@@ -90,13 +86,11 @@ const Quiz = () => {
             .sort(() => Math.random() - 0.5)
             .slice(0, Math.min(10, allQuestions.length));
 
-          console.log('Selected questions with options:', selectedQuestions); // Debug log
           setQuestions(selectedQuestions);
         } else {
           throw new Error('No testId or attemptId provided');
         }
       } catch (error) {
-        console.error('Error fetching questions:', error); // Debug log
         setError(error.response?.data?.error || error.message || 'Failed to fetch questions');
       } finally {
         setLoading(false);
@@ -136,11 +130,10 @@ const Quiz = () => {
   };
 
   const handleSubmit = async () => {
+    setSubmitting(true); // <-- Set submitting to true
     try {
-      console.log('=== Quiz Submission Started ===');
       const token = localStorage.getItem('token');
       if (!token) {
-        console.error('No token found');
         navigate('/login');
         return;
       }
@@ -149,7 +142,6 @@ const Quiz = () => {
       if (!timerExpired) {
         const unansweredQuestions = questions.filter(q => !selectedAnswers[q.uniqueId]);
         if (unansweredQuestions.length > 0) {
-          console.log('Unanswered questions:', unansweredQuestions.length);
           setError(`Please answer all questions before submitting. ${unansweredQuestions.length} questions remaining.`);
           return;
         }
@@ -157,13 +149,6 @@ const Quiz = () => {
 
       const endTime = Date.now();
       const timeSpent = Math.floor((endTime - startTime) / 1000);
-
-      console.log('Preparing submission:', {
-        testId,
-        questionsCount: questions.length,
-        timeSpent,
-        selectedAnswersCount: Object.keys(selectedAnswers).length
-      });
 
       const answers = questions.map(q => ({
         questionId: q.uniqueId,
@@ -175,7 +160,6 @@ const Quiz = () => {
         isCorrect: selectedAnswers[q.uniqueId] === q.correctAnswer
       }));
 
-      console.log('Making POST request to submit quiz');
       const response = await axios.post(
         `${process.env.REACT_APP_API_URL}/api/quiz-attempts`,
         {
@@ -191,26 +175,20 @@ const Quiz = () => {
         }
       );
 
-      console.log('Quiz submission response:', response.data);
-
       if (!response.data?.success) {
         throw new Error(response.data?.error || 'Failed to submit quiz');
       }
 
       const attemptId = response.data?.attemptId;
       if (!attemptId) {
-        console.error('No attemptId in response:', response.data);
         throw new Error('No attempt ID received from server');
       }
-
-      console.log('Received attemptId:', attemptId);
 
       // Add a small delay to ensure the attempt is saved
       await new Promise(resolve => setTimeout(resolve, 1000));
       
       // Verify the attempt exists before navigating
       try {
-        console.log('Verifying attempt with ID:', attemptId);
         const verifyResponse = await axios.get(
           `${process.env.REACT_APP_API_URL}/api/quiz-attempts/${attemptId}`,
           {
@@ -218,22 +196,19 @@ const Quiz = () => {
           }
         );
         
-        console.log('Verification response:', verifyResponse.data);
-        
         if (!verifyResponse.data?.success || !verifyResponse.data?.attempt) {
           throw new Error('Attempt verification failed');
         }
         
         // Use replace instead of navigate to prevent back button issues
-        console.log('Attempt verified, navigating to result page with ID:', attemptId);
         navigate(`/quiz-result/${attemptId}`, { replace: true });
       } catch (verifyError) {
-        console.error('Error verifying attempt:', verifyError);
         throw new Error('Failed to verify quiz attempt. Please try again.');
       }
     } catch (error) {
-      console.error('Error submitting quiz:', error);
       setError(error.response?.data?.error || error.message || 'Failed to submit quiz. Please try again.');
+    } finally {
+      setSubmitting(false); // <-- Reset submitting if error
     }
   };
 
@@ -258,12 +233,9 @@ const Quiz = () => {
   };
 
   const renderQuestionInput = (question) => {
-    console.log('Rendering question:', question); // Debug log for current question
-
     switch (question.type) {
       case 'MCQ':
         if (!question.options || question.options.length === 0) {
-          console.warn('MCQ question has no options:', question); // Debug log
           return (
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 flex items-center gap-2">
               <AlertCircle className="w-5 h-5 text-yellow-600" />
@@ -374,7 +346,6 @@ const Quiz = () => {
         );
       
       default:
-        console.warn('Unknown question type:', question.type); // Debug log
         return (
           <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center gap-2">
             <AlertCircle className="w-5 h-5 text-red-600" />
@@ -418,6 +389,17 @@ const Quiz = () => {
             <h3 className="text-lg font-semibold text-blue-800">No Questions Available</h3>
           </div>
           <p className="text-blue-700">There are no questions available for this quiz.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (submitting) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="flex flex-col items-center space-y-4">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+          <p className="text-gray-600">Submitting your quiz and loading results...</p>
         </div>
       </div>
     );

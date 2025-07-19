@@ -18,6 +18,13 @@ const quizAttemptSchema = new mongoose.Schema({
     userAnswer: String,
     correctAnswer: String,
     isCorrect: Boolean,
+    feedback: {
+      text: String,
+      submittedAt: {
+        type: Date,
+        default: Date.now
+      }
+    },
     type: {
       type: String,
       enum: ['MCQ', 'YES_NO', 'TRUE_FALSE', 'DESCRIPTIVE', 'FILL_IN_BLANK', 'SHORT_ANSWER'],

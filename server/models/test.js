@@ -1,7 +1,5 @@
 const mongoose = require('mongoose');
 
-console.log('Test model question type enum:', ['MCQ', 'YES_NO', 'DESCRIPTIVE', 'TRUE_FALSE', 'SHORT_ANSWER']);
-
 // Define a schema for questions
 const questionSchema = new mongoose.Schema({
   uniqueId: {

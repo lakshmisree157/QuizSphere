@@ -5,8 +5,8 @@ from pydantic import BaseModel, validator
 import logging
 import json
 import requests
-import fitz
 import base64
+import fitz
 from collections import defaultdict
 from nltk.tokenize import sent_tokenize
 from dotenv import load_dotenv
@@ -295,62 +295,97 @@ async def generate_questions(data: PDFContent):
     logger.info("Starting question generation from PDF content")
     try:
         pdf_content = base64.b64decode(data.content)
-        structured_data = extract_pdf_content(pdf_content)
-
-        if not structured_data:
-            raise HTTPException(status_code=400, detail="No content extracted from PDF")
+        try:
+            structured_data = extract_pdf_content(pdf_content)
+        except Exception as e:
+            logger.warning(f"Structured extraction failed: {e}")
+            structured_data = None
 
         all_questions = []
         topic_breakdown = {}
+        used_fallback = False
 
-        for main_topic, subtopics in structured_data.items():
-            logger.info(f"Processing main topic: {main_topic}")
-            topic_questions = []
+        # If structured extraction worked and has usable content
+        if structured_data and any(subtopics for subtopics in structured_data.values() if any(content.strip() for content in subtopics.values())):
+            for main_topic, subtopics in structured_data.items():
+                logger.info(f"Processing main topic: {main_topic}")
+                topic_questions = []
 
-            for subtopic, content in subtopics.items():
-                if len(content.strip()) < 100:
-                    logger.warning(f"Skipping short content in {main_topic}/{subtopic}")
-                    continue
-
-                logger.info(f"Processing subtopic: {subtopic}")
-                
-                # Use your BloomPredictor to determine the level
-                try:
-                    bloom_level = predict_bloom_level_for_paragraph(content)
-                    logger.info(f"Predicted Bloom level {bloom_level} for {subtopic}")
-                except Exception as e:
-                    logger.error(f"Error predicting Bloom level: {e}, using default level 2")
-                    bloom_level = 2
-                
-                # Chunk content if too long
-                chunks = chunk_content(content)
-
-                for chunk in chunks:
-                    try:
-                        questions = generate_questions_with_groq(chunk, bloom_level)
-                        
-                        for q in questions:
-                            formatted_question = {
-                                "content": q["question"],
-                                "type": q["type"],
-                                "bloomLevel": bloom_level,
-                                "bloomName": BLOOM_TAXONOMY[bloom_level]["name"],
-                                "mainTopic": main_topic,
-                                "subtopic": subtopic,
-                                "options": q.get("options", []),
-                                "correctAnswer": q["answer"]
-                            }
-                            
-                            topic_questions.append(formatted_question)
-                            logger.info(f"Added {q['type']} question for level {bloom_level}")
-                            
-                    except Exception as e:
-                        logger.error(f"Error processing chunk: {str(e)}")
+                for subtopic, content in subtopics.items():
+                    if len(content.strip()) < 100:
+                        logger.warning(f"Skipping short content in {main_topic}/{subtopic}")
                         continue
 
-            all_questions.extend(topic_questions)
-            topic_breakdown[main_topic] = len(topic_questions)
-            logger.info(f"Generated {len(topic_questions)} questions for {main_topic}")
+                    logger.info(f"Processing subtopic: {subtopic}")
+                    try:
+                        bloom_level = predict_bloom_level_for_paragraph(content)
+                        logger.info(f"Predicted Bloom level {bloom_level} for {subtopic}")
+                    except Exception as e:
+                        logger.error(f"Error predicting Bloom level: {e}, using default level 2")
+                        bloom_level = 2
+
+                    chunks = chunk_content(content)
+                    for chunk in chunks:
+                        try:
+                            questions = generate_questions_with_groq(chunk, bloom_level)
+                            for q in questions:
+                                formatted_question = {
+                                    "content": q["question"],
+                                    "type": q["type"],
+                                    "bloomLevel": bloom_level,
+                                    "bloomName": BLOOM_TAXONOMY[bloom_level]["name"],
+                                    "mainTopic": main_topic,
+                                    "subtopic": subtopic,
+                                    "options": q.get("options", []),
+                                    "correctAnswer": q["answer"]
+                                }
+                                topic_questions.append(formatted_question)
+                                logger.info(f"Added {q['type']} question for level {bloom_level}")
+                        except Exception as e:
+                            logger.error(f"Error processing chunk: {str(e)}")
+                            continue
+                all_questions.extend(topic_questions)
+                topic_breakdown[main_topic] = len(topic_questions)
+                logger.info(f"Generated {len(topic_questions)} questions for {main_topic}")
+        else:
+            # Fallback: extract all text and chunk for LLM
+            used_fallback = True
+            logger.warning("Falling back to generic text extraction and chunking for LLM question generation.")
+            try:
+                import fitz
+                doc = fitz.open(stream=pdf_content, filetype="pdf")
+                all_text = ""
+                for page in doc:
+                    all_text += page.get_text()
+                doc.close()
+            except Exception as e:
+                logger.error(f"Failed to extract text from PDF in fallback: {e}")
+                raise HTTPException(status_code=400, detail="Failed to extract text from PDF.")
+
+            chunks = chunk_content(all_text, max_length=2000)
+            fallback_questions = []
+            for chunk in chunks:
+                try:
+                    questions = generate_questions_with_groq(chunk, bloom_level=2)  # Use default Bloom level
+                    for q in questions:
+                        formatted_question = {
+                            "content": q["question"],
+                            "type": q["type"],
+                            "bloomLevel": 2,
+                            "bloomName": BLOOM_TAXONOMY[2]["name"],
+                            "mainTopic": "General",
+                            "subtopic": "General",
+                            "options": q.get("options", []),
+                            "correctAnswer": q["answer"]
+                        }
+                        fallback_questions.append(formatted_question)
+                        logger.info(f"[Fallback] Added {q['type']} question for chunk.")
+                except Exception as e:
+                    logger.error(f"[Fallback] Error processing chunk: {str(e)}")
+                    continue
+            all_questions.extend(fallback_questions)
+            topic_breakdown["General"] = len(fallback_questions)
+            logger.info(f"[Fallback] Generated {len(fallback_questions)} questions from fallback.")
 
         if not all_questions:
             raise HTTPException(status_code=500, detail="No questions generated")
@@ -358,9 +393,9 @@ async def generate_questions(data: PDFContent):
         response_data = {
             "questions": all_questions,
             "totalQuestions": len(all_questions),
-            "topicBreakdown": topic_breakdown
+            "topicBreakdown": topic_breakdown,
+            "usedFallback": used_fallback
         }
-
         return convert_numpy_types(response_data)
 
     except Exception as e:

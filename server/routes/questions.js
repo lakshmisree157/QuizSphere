@@ -121,9 +121,6 @@ router.post('/', async (req, res) => {
       // Normalize type to uppercase and trim whitespace
       let qType = (questionData.type || 'MCQ').toUpperCase().trim();
 
-      // Log the type for debugging
-      console.log('Question type before saving:', qType);
-
       return {
         content: questionData.question || questionData.content,
         options: (questionData.options || []).map(opt => 

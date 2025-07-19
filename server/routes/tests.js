@@ -45,15 +45,12 @@ router.get('/:testId/questions', async (req, res) => {
       options: q.type === 'MCQ' ? q.options : q.type === 'YES_NO' ? ['Yes', 'No'] : []
     }));
 
-    console.log('Sending test questions:', questions); // Debug log
-
     res.json({
       success: true,
       questions,
       testName: test.testName
     });
   } catch (error) {
-    console.error('Error fetching test questions:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to fetch questions'
@@ -64,28 +61,17 @@ router.get('/:testId/questions', async (req, res) => {
 // Get test statistics
 router.get('/:testId/stats', async (req, res) => {
   try {
-    console.log('=== Test Stats Request ===');
-    console.log('Test ID:', req.params.testId);
-    console.log('User ID:', req.user._id);
-
     const test = await Test.findOne({
       _id: req.params.testId,
       userId: req.user._id
     }).lean();
 
     if (!test) {
-      console.log('Test not found:', req.params.testId);
       return res.status(404).json({
         success: false,
         error: 'Test not found'
       });
     }
-
-    console.log('Test found:', {
-      testId: test._id,
-      testName: test.testName,
-      questionCount: test.questions?.length
-    });
 
     // Get all attempts for this test
     const attempts = await QuizAttempt.find({
@@ -94,8 +80,6 @@ router.get('/:testId/stats', async (req, res) => {
     })
     .sort('-createdAt')
     .lean();
-
-    console.log('Found attempts:', attempts.length);
 
     // Calculate statistics
     const stats = {
@@ -121,22 +105,45 @@ router.get('/:testId/stats', async (req, res) => {
       }))
     };
 
-    console.log('Sending stats response:', {
-      testName: stats.testName,
-      attemptCount: stats.recentAttempts.length,
-      questionTypes: Object.keys(stats.questionTypeBreakdown)
-    });
-
     res.json({
       success: true,
       stats
     });
   } catch (error) {
-    console.error('Error fetching test statistics:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to fetch test statistics'
     });
+  }
+});
+
+// Get sample test (accessible to all users)
+router.get('/sample', async (req, res) => {
+  try {
+    const sampleTest = await Test.findOne({ isSample: true }).lean();
+    if (!sampleTest) {
+      return res.status(404).json({ success: false, error: 'Sample test not found' });
+    }
+    res.json({ success: true, test: sampleTest });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to fetch sample test' });
+  }
+});
+
+// Delete a test and all its quiz attempts
+router.delete('/:testId', async (req, res) => {
+  try {
+    const testId = req.params.testId;
+    // Remove the test
+    const testResult = await Test.deleteOne({ _id: testId, userId: req.user._id });
+    // Remove all quiz attempts for this test
+    const attemptsResult = await QuizAttempt.deleteMany({ testId: testId, userId: req.user._id });
+    if (testResult.deletedCount === 0) {
+      return res.status(404).json({ success: false, error: 'Test not found or not authorized' });
+    }
+    res.json({ success: true, message: 'Test and related attempts deleted' });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to delete test' });
   }
 });
 

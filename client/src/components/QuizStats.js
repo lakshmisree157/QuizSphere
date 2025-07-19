@@ -45,25 +45,18 @@ const QuizStats = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        console.log('=== Quiz Stats Fetch Started ===');
-        console.log('Test ID:', testId);
-        
         const token = localStorage.getItem('token');
         if (!token) {
-          console.error('No token found');
           navigate('/login');
           return;
         }
 
-        console.log('Making request to fetch test stats');
         const response = await axios.get(
           `${process.env.REACT_APP_API_URL}/api/tests/${testId}/stats`,
           {
             headers: { 'Authorization': `Bearer ${token}` }
           }
         );
-
-        console.log('Test stats response:', response.data);
 
         if (!response.data?.success) {
           throw new Error(response.data?.error || 'Failed to fetch test stats');
@@ -90,14 +83,7 @@ const QuizStats = () => {
           answers: attempt.answers || []
         })));
 
-        console.log('Stats data processed:', {
-          testName: stats.testName,
-          questionTypes: Object.keys(stats.questionTypeBreakdown),
-          attemptCount: stats.recentAttempts.length
-        });
-
       } catch (error) {
-        console.error('Error fetching stats data:', error);
         setError(error.response?.data?.error || error.message || 'Failed to fetch data');
       } finally {
         setLoading(false);
@@ -382,13 +368,7 @@ const QuizStats = () => {
                               variant="outlined"
                               size="small"
                               onClick={() => {
-                                console.log('Attempt data from stats before navigation:', {
-                                  attemptId: attempt._id,
-                                  testId: attempt.testId?._id,
-                                  score: attempt.score
-                                });
                                 if (!attempt._id) {
-                                  console.error('No attempt ID available for navigation from stats');
                                   return;
                                 }
                                 navigate(`/quiz-result/${attempt._id}`);

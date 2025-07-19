@@ -9,6 +9,8 @@ const auth = require('../middleware/auth');
 
 router.use(auth);
 
+const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://127.0.0.1:8000';
+
 // Helper to extract option letter from userAnswer string
 function extractOptionLetter(answer) {
   if (!answer) return '';
@@ -24,7 +26,6 @@ async function getSimilarityFromMLService(userAnswer, correctAnswer) {
       correctAnswer
     });
     //print the output
-    console.log('ML Service Similarity Response:', response.data);
     return response.data.similarity;
   } catch (error) {
     console.error('Error calling ML service similarity endpoint:', error.message);
@@ -64,54 +65,56 @@ router.get('/:quizId', async (req, res) => {
   const userId = req.user?._id;
   const quizId = req.params.quizId;
   
-  console.log('=== Quiz Attempt Retrieval ===');
-  console.log('User ID:', userId);
-  console.log('Quiz ID:', quizId);
-
   try {
     if (!quizId || quizId === 'undefined') {
-      console.log('Invalid quiz ID provided');
       return res.status(400).json({
         success: false,
         error: 'Invalid quiz ID provided'
       });
     }
 
-    console.log('Looking up attempt...');
     const attempt = await QuizAttempt.findOne({
       _id: quizId,
       userId: userId
     }).populate('testId', '_id testName');
 
     if (!attempt) {
-      console.log('Attempt not found:', { quizId, userId });
       return res.status(404).json({
         success: false,
         error: 'Quiz attempt not found'
       });
     }
 
-    console.log('Attempt found:', {
-      attemptId: attempt._id,
-      userId: attempt.userId,
-      score: attempt.score,
-      testName: attempt.testId?.testName
-    });
+    // Enhance answers with feedback information
+    const enhancedAnswers = attempt.answers.map(answer => ({
+      questionId: answer.questionId,
+      question: answer.question,
+      userAnswer: answer.userAnswer,
+      correctAnswer: answer.correctAnswer,
+      isCorrect: answer.isCorrect,
+      type: answer.type,
+      options: answer.options,
+      feedback: answer.feedback || null,
+      hasFeedback: !!(answer.feedback && answer.feedback.text)
+    }));
 
     res.json({
       success: true,
       attempt: {
         _id: attempt._id,
         testId: attempt.testId,
-        answers: attempt.answers,
+        answers: enhancedAnswers,
         timeSpent: attempt.timeSpent,
         score: attempt.score,
         totalQuestions: attempt.totalQuestions,
-        createdAt: attempt.createdAt
+        createdAt: attempt.createdAt,
+        feedbackStats: {
+          totalQuestions: attempt.answers.length,
+          questionsWithFeedback: enhancedAnswers.filter(a => a.hasFeedback).length
+        }
       }
     });
   } catch (error) {
-    console.error('Error fetching quiz attempt:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to fetch quiz attempt'
@@ -121,21 +124,31 @@ router.get('/:quizId', async (req, res) => {
 
 // Get all quiz attempts for a user
 router.get('/', async (req, res) => {
-  console.log(`GET /api/quiz-attempts/ all attempts by user ${req.user._id}`);
   try {
     const attempts = await QuizAttempt.find({ userId: req.user._id })
       .populate('testId', '_id testName')
       .sort('-createdAt')
       .lean();
 
-    console.log(`Found ${attempts.length} attempts for user ${req.user._id}`);
+    // Enhance attempts with feedback statistics
+    const enhancedAttempts = attempts.map(attempt => {
+      const questionsWithFeedback = attempt.answers.filter(a => a.feedback && a.feedback.text).length;
+      return {
+        ...attempt,
+        feedbackStats: {
+          totalQuestions: attempt.answers.length,
+          questionsWithFeedback,
+          feedbackPercentage: attempt.answers.length > 0 ? 
+            Math.round((questionsWithFeedback / attempt.answers.length) * 100) : 0
+        }
+      };
+    });
 
     res.json({
       success: true,
-      attempts: attempts
+      attempts: enhancedAttempts
     });
   } catch (error) {
-    console.error('Error fetching quiz attempts:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to fetch quiz attempts'
@@ -145,7 +158,6 @@ router.get('/', async (req, res) => {
 
 // Get questions from a specific quiz attempt
 router.get('/:quizId/questions', async (req, res) => {
-  console.log(`GET /api/quiz-attempts/${req.params.quizId}/questions by user ${req.user._id}`);
   try {
     const attempt = await QuizAttempt.findOne({
       _id: req.params.quizId,
@@ -153,7 +165,6 @@ router.get('/:quizId/questions', async (req, res) => {
     }).populate('testId', 'testName');
 
     if (!attempt) {
-      console.warn(`Quiz attempt not found: ${req.params.quizId} for user ${req.user._id}`);
       return res.status(404).json({
         success: false,
         error: 'Quiz attempt not found'
@@ -170,7 +181,7 @@ router.get('/:quizId/questions', async (req, res) => {
       bloomLevelMap[q.uniqueId] = q.bloomLevel;
     });
 
-    // Return the questions from the attempt with all necessary data including bloomLevel
+    // Return the questions from the attempt with all necessary data including bloomLevel and feedback
     const questions = attempt.answers.map(a => ({
       uniqueId: a.questionId,
       content: a.question,
@@ -179,18 +190,21 @@ router.get('/:quizId/questions', async (req, res) => {
       options: a.type === 'MCQ' ? a.options : a.type === 'YES_NO' ? ['Yes', 'No'] : [],
       userAnswer: a.userAnswer,
       isCorrect: a.isCorrect,
-      bloomLevel: bloomLevelMap[a.questionId] || null
+      bloomLevel: bloomLevelMap[a.questionId] || null,
+      feedback: a.feedback || null,
+      hasFeedback: !!(a.feedback && a.feedback.text)
     }));
-
-    console.log('Sending questions with bloomLevel:', questions); // Debug log
 
     res.json({
       success: true,
       questions,
-      testName: attempt.testId.testName
+      testName: attempt.testId.testName,
+      feedbackStats: {
+        totalQuestions: questions.length,
+        questionsWithFeedback: questions.filter(q => q.hasFeedback).length
+      }
     });
   } catch (error) {
-    console.error('Error fetching quiz attempt questions:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to fetch questions'
@@ -201,14 +215,6 @@ router.get('/:quizId/questions', async (req, res) => {
 // Create new quiz attempt
 router.post('/', async (req, res) => {
   const userId = req.user?._id;
-  console.log('=== Quiz Attempt Creation ===');
-  console.log('User ID:', userId);
-  console.log('Request body:', {
-    testId: req.body.testId,
-    answersCount: req.body.answers?.length,
-    timeSpent: req.body.timeSpent
-  });
-
   try {
     let { testId, answers, timeSpent } = req.body;
 
@@ -220,21 +226,10 @@ router.post('/', async (req, res) => {
         }
         return answer;
       });
-
-      // Debug log for sanitized answer types
-      answers.forEach((answer, index) => {
-        console.log(`Sanitized Answer ${index} type:`, answer.type);
-      });
     }
     
     // Validate required fields
     if (!testId || !answers || !Array.isArray(answers) || answers.length === 0) {
-      console.log('Validation failed:', { 
-        hasTestId: !!testId, 
-        hasAnswers: !!answers,
-        isArray: Array.isArray(answers),
-        answersLength: answers?.length 
-      });
       return res.status(400).json({
         success: false,
         error: 'Invalid quiz attempt data'
@@ -244,28 +239,37 @@ router.post('/', async (req, res) => {
     // Get the test to get the questions
     const test = await Test.findById(testId);
     if (!test) {
-      console.log('Test not found:', testId);
       return res.status(404).json({
         success: false,
         error: 'Test not found'
       });
     }
 
-    console.log('Test found:', {
-      testId: test._id,
-      testName: test.testName,
-      questionCount: test.questions.length
-    });
-
-    // Calculate correctness and score
+    // Calculate correctness, score, and generate feedback
     let correctCount = 0;
     const updatedAnswers = [];
     for (const answer of answers) {
       const isCorrect = await isAnswerCorrect(answer.userAnswer, answer.correctAnswer, answer.type);
       if (isCorrect) correctCount++;
+      // Generate feedback from ML service
+      let feedback = null;
+      try {
+        const feedbackRes = await axios.post(
+          `${ML_SERVICE_URL}/api/feedback/generate`,
+          {
+            userAnswer: answer.userAnswer || '',
+            correctAnswer: answer.correctAnswer || ''
+          },
+          { timeout: 20000 }
+        );
+        feedback = feedbackRes.data.feedback || null;
+      } catch (err) {
+        feedback = null;
+      }
       updatedAnswers.push({
         ...answer,
-        isCorrect
+        isCorrect,
+        feedback: feedback ? { text: feedback, submittedAt: new Date() } : null
       });
     }
 
@@ -281,20 +285,13 @@ router.post('/', async (req, res) => {
       totalQuestions: answers.length
     });
 
-    console.log('Saving attempt for user:', userId);
     const savedAttempt = await attempt.save();
-    console.log('Attempt saved:', {
-      attemptId: savedAttempt._id,
-      userId: savedAttempt.userId,
-      score: savedAttempt.score
-    });
 
     res.status(201).json({
       success: true,
       attemptId: savedAttempt._id.toString()
     });
   } catch (error) {
-    console.error('Error in quiz attempt creation:', error);
     res.status(500).json({
       success: false,
       error: error.message || 'Failed to save quiz attempt'
@@ -304,7 +301,6 @@ router.post('/', async (req, res) => {
 
 // Delete quiz attempt by ID
 router.delete('/:quizId', async (req, res) => {
-  console.log(`DELETE /api/quiz-attempts/${req.params.quizId} by user ${req.user._id}`);
   try {
     const result = await QuizAttempt.deleteOne({
       _id: req.params.quizId,
@@ -318,8 +314,6 @@ router.delete('/:quizId', async (req, res) => {
         error: 'Quiz attempt not found or not deleted'
       });
     }
-
-    console.log(`Quiz attempt deleted: ${req.params.quizId} for user ${req.user._id}`);
 
     res.json({
       success: true,
@@ -336,14 +330,11 @@ router.delete('/:quizId', async (req, res) => {
 
 // Delete all quiz attempts for a test
 router.delete('/test/:testId', async (req, res) => {
-  console.log(`DELETE /api/quiz-attempts/test/${req.params.testId} by user ${req.user._id}`);
   try {
     const result = await QuizAttempt.deleteMany({
       testId: req.params.testId,
       userId: req.user._id
     });
-
-    console.log(`Deleted ${result.deletedCount} quiz attempts for test ${req.params.testId} by user ${req.user._id}`);
 
     res.json({
       success: true,

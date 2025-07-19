@@ -17,7 +17,6 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (email, password) => {
     try {
-      console.log('Attempting login with:', process.env.REACT_APP_API_URL);
       const response = await axios.post(
         `${process.env.REACT_APP_API_URL}/api/auth/login`,
         { email, password },
@@ -88,11 +87,8 @@ export const AuthProvider = ({ children }) => {
             }
           );
 
-          console.log('Verify response data:', response.data);
-
           if (response.data && response.data.userId) {
             const storedUser = JSON.parse(userData);
-            console.log('User data from localStorage:', storedUser);
             setUser(storedUser);
             setIsAuthenticated(true);
           } else {

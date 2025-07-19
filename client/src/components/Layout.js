@@ -17,7 +17,6 @@ const Layout = () => {
     }
   };
 
-  console.log('Layout user:', user);
   const displayName = user?.username || user?.name || 'User';
 
   return (

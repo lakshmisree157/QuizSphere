@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { 
   Container, Typography, Box, Button, 
-  LinearProgress, Alert, Paper, TextField 
+  LinearProgress, Alert, Paper, TextField
 } from '@mui/material';
 
 const PDFUpload = () => {
@@ -86,7 +86,16 @@ const PDFUpload = () => {
           Upload PDF
         </Typography>
 
+        {/* Remove Sample PDF Section */}
+        {/* <Card sx={{ mb: 3, bgcolor: 'info.light' }}>
+          ...sample content...
+        </Card> */}
+
         <Paper elevation={3} sx={{ p: 4, mt: 3 }}>
+          <Typography variant="h6" gutterBottom>
+            Upload Your PDF
+          </Typography>
+          
           <TextField
             fullWidth
             label="Test Name"

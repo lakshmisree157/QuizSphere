@@ -1,16 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { 
-  UploadCloud, 
-  Play, 
-  BarChart3, 
-  Edit3, 
-  Eye, 
-  RotateCcw, 
-  Trash2, 
-  Award, 
-  Clock, 
+import {
+  UploadCloud,
+  Play,
+  BarChart3,
+  Edit3,
+  Eye,
+  RotateCcw,
+  Trash2,
+  Award,
+  Clock,
   Calendar,
   TrendingUp,
   BookOpen,
@@ -28,6 +28,10 @@ const Dashboard = () => {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [selectedAttempt, setSelectedAttempt] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [sampleTest, setSampleTest] = useState(null); // <-- Add state for sample test
+  const [showDeleteTestDialog, setShowDeleteTestDialog] = useState(false);
+  const [selectedTest, setSelectedTest] = useState(null);
+  const [deletingTest, setDeletingTest] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -39,16 +43,25 @@ const Dashboard = () => {
           return;
         }
 
-        const [testsResponse, attemptsResponse] = await Promise.all([
+        const [testsResponse, attemptsResponse, sampleResponse] = await Promise.all([
           axios.get(`${process.env.REACT_APP_API_URL}/api/tests`, {
             headers: { 'Authorization': `Bearer ${token}` }
           }),
           axios.get(`${process.env.REACT_APP_API_URL}/api/quiz-attempts`, {
             headers: { 'Authorization': `Bearer ${token}` }
+          }),
+          axios.get(`${process.env.REACT_APP_API_URL}/api/tests/sample`, {
+            headers: { 'Authorization': `Bearer ${token}` }
           })
         ]);
 
-        setTests(testsResponse.data?.tests || []);
+        let tests = testsResponse.data?.tests || [];
+        const sampleTest = sampleResponse.data?.success && sampleResponse.data?.test ? sampleResponse.data.test : null;
+        // If sampleTest exists and is not already in tests, add it
+        if (sampleTest && !tests.some(t => t._id === sampleTest._id)) {
+          tests = [sampleTest, ...tests];
+        }
+        setTests(tests);
         setQuizAttempts(attemptsResponse.data?.attempts || []);
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
@@ -88,6 +101,25 @@ const Dashboard = () => {
       setDeleting(false);
       setShowDeleteDialog(false);
       setSelectedAttempt(null);
+    }
+  };
+
+  const handleDeleteTest = async () => {
+    if (!selectedTest) return;
+    try {
+      setDeletingTest(true);
+      const token = localStorage.getItem('token');
+      await axios.delete(
+        `${process.env.REACT_APP_API_URL}/api/tests/${selectedTest._id}`,
+        { headers: { 'Authorization': `Bearer ${token}` } }
+      );
+      setTests(prev => prev.filter(t => t._id !== selectedTest._id));
+      setShowDeleteTestDialog(false);
+      setSelectedTest(null);
+    } catch (error) {
+      setError(error.response?.data?.error || 'Failed to delete test');
+    } finally {
+      setDeletingTest(false);
     }
   };
 
@@ -195,18 +227,20 @@ const Dashboard = () => {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
       <div className="container mx-auto px-4 py-8">
         {/* Header */}
-        <div className="flex justify-between items-center mb-8">
+        <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
           <div>
             <h1 className="text-4xl font-bold text-slate-800 mb-2">Quiz Dashboard</h1>
             <p className="text-slate-600">Manage your tests and track your progress</p>
           </div>
-          <button
-            onClick={() => navigate('/upload')}
-            className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white px-6 py-3 rounded-lg font-semibold shadow-lg hover:shadow-xl transition-all duration-200 flex items-center space-x-2"
-          >
-            <UploadCloud className="w-5 h-5" />
-            <span>Upload PDF</span>
-          </button>
+          <div className="flex flex-col md:flex-row gap-4 items-center">
+            <button
+              onClick={() => navigate('/upload')}
+              className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white px-6 py-3 rounded-lg font-semibold shadow-lg hover:shadow-xl transition-all duration-200 flex items-center space-x-2"
+            >
+              <UploadCloud className="w-5 h-5" />
+              <span>Upload PDF</span>
+            </button>
+          </div>
         </div>
 
         {/* Stats Cards */}
@@ -222,7 +256,7 @@ const Dashboard = () => {
               </div>
             </div>
           </div>
-          
+
           <div className="bg-white rounded-xl shadow-lg p-6 border border-slate-200">
             <div className="flex items-center space-x-3">
               <div className="bg-green-100 p-3 rounded-lg">
@@ -234,7 +268,7 @@ const Dashboard = () => {
               </div>
             </div>
           </div>
-          
+
           <div className="bg-white rounded-xl shadow-lg p-6 border border-slate-200">
             <div className="flex items-center space-x-3">
               <div className="bg-purple-100 p-3 rounded-lg">
@@ -243,8 +277,8 @@ const Dashboard = () => {
               <div>
                 <p className="text-slate-600 text-sm">Average Score</p>
                 <p className="text-2xl font-bold text-slate-800">
-                  {quizAttempts.length > 0 
-                    ? Math.round(quizAttempts.reduce((sum, a) => sum + a.score, 0) / quizAttempts.length) 
+                  {quizAttempts.length > 0
+                    ? Math.round(quizAttempts.reduce((sum, a) => sum + a.score, 0) / quizAttempts.length)
                     : 0}%
                 </p>
               </div>
@@ -263,7 +297,12 @@ const Dashboard = () => {
                   <div key={test._id} className="bg-white rounded-xl shadow-lg p-6 border border-slate-200 hover:shadow-xl transition-shadow duration-200">
                     <div className="flex justify-between items-start mb-4">
                       <div className="flex-1">
-                        <h3 className="text-xl font-semibold text-slate-800 mb-2">{test.testName}</h3>
+                        <h3 className="text-xl font-semibold text-slate-800 mb-2 flex items-center gap-2">
+                          {test.testName}
+                          {test.isSample && (
+                            <span className="ml-2 px-2 py-1 text-xs font-bold rounded bg-green-100 text-green-700 border border-green-200">Sample</span>
+                          )}
+                        </h3>
                         <p className="text-slate-600 mb-3">{test.description}</p>
                         {renderQuestionTypeChips(test.questions)}
                       </div>
@@ -288,6 +327,16 @@ const Dashboard = () => {
                           title="Start Quiz"
                         >
                           <Play className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedTest(test);
+                            setShowDeleteTestDialog(true);
+                          }}
+                          className="p-2 bg-red-100 hover:bg-red-200 text-red-600 rounded-lg transition-colors duration-200"
+                          title="Delete Test"
+                        >
+                          <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
                     </div>
@@ -394,7 +443,6 @@ const Dashboard = () => {
                           <div className="flex space-x-2">
                             <button
                               onClick={() => {
-                                console.log('Viewing results for attempt:', attempt._id);
                                 navigate(`/quiz-result/${attempt._id}`);
                               }}
                               className="p-2 bg-blue-100 hover:bg-blue-200 text-blue-600 rounded-lg transition-colors duration-200"
@@ -464,6 +512,45 @@ const Dashboard = () => {
                 className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold transition-colors duration-200 disabled:opacity-50 flex items-center space-x-2"
               >
                 {deleting ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <span>Delete</span>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Delete Test Confirmation Dialog */}
+      {showDeleteTestDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
+            <div className="flex items-center space-x-3 mb-4">
+              <div className="bg-red-100 p-2 rounded-lg">
+                <Trash2 className="w-5 h-5 text-red-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-slate-800">Delete Test?</h3>
+            </div>
+            <p className="text-slate-600 mb-6">
+              Are you sure you want to delete this test and all its attempts? This action cannot be undone.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowDeleteTestDialog(false)}
+                disabled={deletingTest}
+                className="px-4 py-2 text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors duration-200 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteTest}
+                disabled={deletingTest}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold transition-colors duration-200 disabled:opacity-50 flex items-center space-x-2"
+              >
+                {deletingTest ? (
                   <>
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
                     <span>Deleting...</span>

@@ -88,6 +88,23 @@ const Login = () => {
             <span className="text-indigo-500 cursor-pointer hover:underline">Privacy Policy</span>.
           </p>
         </form>
+        <div className="mt-6 flex flex-col items-center gap-2">
+          <button
+            type="button"
+            className="text-indigo-500 hover:underline text-sm"
+            onClick={() => navigate('/')}
+          >
+            Back to Landing Page
+          </button>
+          <span className="text-gray-400 text-xs">or</span>
+          <button
+            type="button"
+            className="text-indigo-500 hover:underline text-sm"
+            onClick={() => navigate('/register')}
+          >
+            Create a new account
+          </button>
+        </div>
       </div>
     </div>
   );

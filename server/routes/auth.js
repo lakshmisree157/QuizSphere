@@ -7,7 +7,6 @@ const User = require('../models/user');
 // Registration route
 router.post('/register', async (req, res) => {
   try {
-    console.log('Registration request body:', req.body);
     const { username, name, email, password } = req.body;
 
     // Validate input
@@ -29,8 +28,6 @@ router.post('/register', async (req, res) => {
       password // Password will be hashed by the pre-save middleware
     });
 
-    console.log('User instance before save:', user);
-
     await user.save();
 
     // Generate token
@@ -51,7 +48,6 @@ router.post('/register', async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Registration error:', error);
     res.status(500).json({ error: 'Registration failed' });
   }
 });
